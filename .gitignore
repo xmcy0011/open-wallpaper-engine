@@ -19,3 +19,4 @@ build
 cmake-build-debug
 build-*
 /workshop
+/rstd
