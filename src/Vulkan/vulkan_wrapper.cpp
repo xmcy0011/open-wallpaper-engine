@@ -28,8 +28,13 @@ bool Load(InstanceDispatch& dld) noexcept {
 
 VkResult LoadLibrary(utils::DynamicLibrary& dlib, vvk::InstanceDispatch& dld) {
     using namespace utils;
+    // Try platform-specific Vulkan loader names.
+#if defined(_WIN32)
+    dlib = DynamicLibrary("vulkan-1.dll");
+#else
     dlib = DynamicLibrary("libvulkan.so.1");
     if (! dlib.IsOpen()) dlib = DynamicLibrary("libvulkan.so");
+#endif
     if (! dlib.IsOpen()) return VK_ERROR_INITIALIZATION_FAILED;
 
     if (! dlib.GetSymbol("vkGetInstanceProcAddr", dld.vkGetInstanceProcAddr))

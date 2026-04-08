@@ -1,5 +1,6 @@
 #include <cassert>
 #include <algorithm>
+#include <iterator>
 
 #include "RenderGraph.hpp"
 

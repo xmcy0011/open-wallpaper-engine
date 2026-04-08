@@ -25,7 +25,7 @@ bool Device::CheckGPU(vvk::PhysicalDevice gpu, std::span<const Extension> exts, 
     // check queue
     bool has_graphics_queue { false };
     bool has_present_queue { false };
-    uint index { 0 };
+    uint32_t index { 0 };
     for (auto& prop : props) {
         if (prop.queueFlags & VK_QUEUE_GRAPHICS_BIT) has_graphics_queue = true;
         if (surface) {

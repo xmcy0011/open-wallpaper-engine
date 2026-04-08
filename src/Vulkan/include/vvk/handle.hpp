@@ -21,10 +21,10 @@ public:
     Handle(std::nullptr_t) {}
 
     Handle(Handle&& rhs) noexcept
-        : handle { std::exchange(rhs.handle, nullptr) }, owner { rhs.owner }, dld { rhs.dld } {}
+        : handle { std::exchange(rhs.handle, Type {}) }, owner { rhs.owner }, dld { rhs.dld } {}
     Handle& operator=(Handle&& rhs) noexcept {
         Release();
-        handle = std::exchange(rhs.handle, nullptr);
+        handle = std::exchange(rhs.handle, Type {});
         owner  = rhs.owner;
         dld    = rhs.dld;
         return *this;
@@ -36,7 +36,7 @@ public:
     /// Destroys any held object.
     void reset() noexcept {
         Release();
-        handle = nullptr;
+        handle = Type {};
     }
 
     /// Returns the address of the held object.
@@ -47,11 +47,11 @@ public:
     const Type& operator*() const noexcept { return handle; }
 
     /// Returns true when there's a held object.
-    explicit operator bool() const noexcept { return handle != nullptr; }
+    explicit operator bool() const noexcept { return handle != Type {}; }
 
 protected:
-    Type            handle = nullptr;
-    OwnerType       owner  = nullptr;
+    Type            handle {};
+    OwnerType       owner {};
     const Dispatch* dld    = nullptr;
 
 private:
@@ -78,10 +78,11 @@ public:
     Handle() = default;
     Handle(std::nullptr_t) {}
 
-    Handle(Handle&& rhs) noexcept: handle { std::exchange(rhs.handle, nullptr) }, dld { rhs.dld } {}
+    Handle(Handle&& rhs) noexcept
+        : handle { std::exchange(rhs.handle, Type {}) }, dld { rhs.dld } {}
     Handle& operator=(Handle&& rhs) noexcept {
         Release();
-        handle = std::exchange(rhs.handle, nullptr);
+        handle = std::exchange(rhs.handle, Type {});
         dld    = rhs.dld;
         return *this;
     }
@@ -92,7 +93,7 @@ public:
     /// Destroys any held object.
     void reset() noexcept {
         Release();
-        handle = nullptr;
+        handle = Type {};
     }
 
     /// Returns the address of the held object.
@@ -103,10 +104,10 @@ public:
     const Type& operator*() const noexcept { return handle; }
 
     /// Returns true when there's a held object.
-    explicit operator bool() const noexcept { return handle != nullptr; }
+    explicit operator bool() const noexcept { return handle != Type {}; }
 
 protected:
-    Type            handle = nullptr;
+    Type            handle {};
     const Dispatch* dld    = nullptr;
 
 private:
@@ -134,7 +135,7 @@ public:
     /// Destroys the current handle if it existed.
 
     /// Destroys any held object.
-    void reset() noexcept { handle = nullptr; }
+    void reset() noexcept { handle = Type {}; }
 
     /// Returns the address of the held object.
     /// Intended for Vulkan structures that expect a pointer to an array.
@@ -144,10 +145,10 @@ public:
     const Type& operator*() const noexcept { return handle; }
 
     /// Returns true when there's a held object.
-    explicit operator bool() const noexcept { return handle != nullptr; }
+    explicit operator bool() const noexcept { return handle != Type {}; }
 
 protected:
-    Type            handle = nullptr;
+    Type            handle {};
     const Dispatch* dld    = nullptr;
 };
 

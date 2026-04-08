@@ -3,6 +3,7 @@
 #include "Swapchain/ExSwapchain.hpp"
 #include "Device.hpp"
 #include <cstdio>
+#include <cstdint>
 
 namespace wallpaper
 {
@@ -82,8 +83,8 @@ public:
     // fence semantics bug that's hard to reproduce.
     virtual ~VulkanExSwapchain() = default;
 
-    uint width() const override { return m_extent.width; }
-    uint height() const override { return m_extent.height; }
+    std::uint32_t width() const override { return m_extent.width; }
+    std::uint32_t height() const override { return m_extent.height; }
 
     const auto& handles() const { return m_handles; }
 
@@ -106,8 +107,8 @@ private:
     VkExtent2D                    m_extent;
 };
 
-inline std::unique_ptr<VulkanExSwapchain> CreateExSwapchain(const Device& device, uint w, uint h,
-                                                            VkImageTiling tiling) {
+inline std::unique_ptr<VulkanExSwapchain> CreateExSwapchain(const Device& device, std::uint32_t w,
+                                                            std::uint32_t h, VkImageTiling tiling) {
     std::array<VulkanExHandle, 3> handles;
     for (auto& handle : handles) {
         if (auto rv = device.tex_cache().CreateExTex(w, h, VK_FORMAT_R8G8B8A8_UNORM, tiling);

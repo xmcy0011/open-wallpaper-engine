@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "Instance.hpp"
 #include "Swapchain.hpp"
 #include "Core/NoCopyMove.hpp"
@@ -40,7 +42,7 @@ struct VmaImageParameters : NoCopy {
     vvk::ImageView view;
     vvk::Sampler   sampler;
     VkExtent3D     extent;
-    uint           mipmap_level { 1 };
+    std::uint32_t  mipmap_level { 1 };
 
     VmaImageParameters();
     ~VmaImageParameters();
@@ -56,7 +58,7 @@ struct ExImageParameters : NoCopy {
     vvk::ImageView view;
     vvk::Sampler   sampler;
     VkExtent3D     extent;
-    uint           mipmap_level { 1 };
+    std::uint32_t  mipmap_level { 1 };
     int            fd { 0 };
 
     // DMA-BUF import metadata populated by CreateExImage in iteration 1a.
@@ -80,7 +82,7 @@ struct ImageParameters {
     VkImageView view;
     VkSampler   sampler;
     VkExtent3D  extent;
-    uint        mipmap_level { 1 };
+    std::uint32_t mipmap_level { 1 };
 
     ImageParameters()  = default;
     ~ImageParameters() = default;

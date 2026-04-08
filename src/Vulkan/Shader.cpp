@@ -56,7 +56,7 @@ inline VkShaderStageFlagBits ToVkType(SpvReflectShaderStageFlagBits s) {
 
 template<typename VEC, typename FUNC>
 bool EnumAllRef(VEC& vec, FUNC&& func) {
-    uint count { 0 };
+    uint32_t count { 0 };
     auto result = func(&count, nullptr);
     assert(result == SPV_REFLECT_RESULT_SUCCESS);
     vec.resize(count);
@@ -313,7 +313,7 @@ static bool GetReflectedInfo(glslang::TProgram& pro, ShaderReflected& ref, const
 };
 */
 
-bool wallpaper::vulkan::GenReflect(std::span<const std::vector<uint>> codes,
+bool wallpaper::vulkan::GenReflect(std::span<const std::vector<std::uint32_t>> codes,
                                    std::vector<Uni_ShaderSpv>& spvs, ShaderReflected& ref) {
     spvs.clear();
     for (const auto& code : codes) {

@@ -24,7 +24,7 @@ public:
     std::shared_ptr<IBinaryStreamW> OpenW(std::string_view path) override {
         std::filesystem::path full_path { FullPath(path) };
         std::filesystem::create_directories(full_path.parent_path());
-        return CreateCBinaryStreamW(full_path.native());
+        return CreateCBinaryStreamW(full_path.string());
     }
 
 private:

@@ -91,3 +91,8 @@ FetchContent_MakeAvailable(miniaudio)
 add_library(miniaudio INTERFACE)
 target_include_directories(miniaudio SYSTEM INTERFACE
     ${CMAKE_CURRENT_BINARY_DIR}/miniaudio-root)
+
+if(MSVC)
+    target_compile_options(glslang PRIVATE /RTC-)
+    target_compile_options(SPIRV PRIVATE /RTC-)
+endif()

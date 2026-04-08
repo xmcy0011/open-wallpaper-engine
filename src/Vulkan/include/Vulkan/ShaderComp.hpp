@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <span>
 #include "Spv.hpp"
 #include <glslang/Public/ShaderLang.h>
@@ -29,7 +30,7 @@ struct ShaderCompOpt {
     // keywords
     bool relaxed_rules_vulkan { false };
     // for global unifom block
-    uint global_uniform_binding { 0 };
+    std::uint32_t global_uniform_binding { 0 };
 
     // relfect:
     bool reflect_all_io_var { true };

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "Parameters.hpp"
 #include "Type.hpp"
 #include "Core/NoCopyMove.hpp"
@@ -31,7 +33,7 @@ struct TextureKey {
     TexUsage      usage;
     TextureFormat format;
     TextureSample sample;
-    uint          mipmap_level { 1 };
+    std::uint32_t mipmap_level { 1 };
 
     static TexHash HashValue(const TextureKey&);
 };

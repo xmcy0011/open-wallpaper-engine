@@ -270,8 +270,8 @@ private:
 
     std::unique_ptr<AllocationType[]> allocations;
     std::size_t                       num    = 0;
-    VkDevice                          device = nullptr;
-    PoolType                          pool   = nullptr;
+    VkDevice                          device {};
+    PoolType                          pool {};
     const DeviceDispatch*             dld    = nullptr;
 };
 

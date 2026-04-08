@@ -211,7 +211,8 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
                 auto& buf = m_desc.vertex_bufs[i];
                 if (! m_desc.dyn_vertex) {
                     if (! rr.vertex_buf->allocateSubRef(vertex.CapacitySizeOf(), buf)) return;
-                    if (! rr.vertex_buf->writeToBuf(buf, { (uint8_t*)vertex.Data(), buf.size }))
+                    if (! rr.vertex_buf->writeToBuf(
+                            buf, { (uint8_t*)vertex.Data(), static_cast<size_t>(buf.size) }))
                         return;
                 } else {
                     if (! rr.dyn_buf->allocateSubRef(vertex.CapacitySizeOf(), buf)) return;
@@ -227,7 +228,9 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
             auto& buf         = m_desc.index_buf;
             if (! m_desc.dyn_vertex) {
                 if (! rr.vertex_buf->allocateSubRef(indice.CapacitySizeof(), buf)) return;
-                if (! rr.vertex_buf->writeToBuf(buf, { (uint8_t*)indice.Data(), buf.size })) return;
+                if (! rr.vertex_buf->writeToBuf(
+                        buf, { (uint8_t*)indice.Data(), static_cast<size_t>(buf.size) }))
+                    return;
             } else {
                 if (! rr.dyn_buf->allocateSubRef(indice.CapacitySizeof(), buf)) return;
             }

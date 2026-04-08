@@ -6,6 +6,7 @@
 #include <memory>
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
@@ -144,7 +145,7 @@ ParticleInitOp WPParticleParser::genParticleInitOp(const nlohmann::json& wpj) {
             };
         } else if (name == "rotationrandom") {
             VecRandom r;
-            r.max[2] = 2 * M_PI;
+            r.max[2] = static_cast<float>(2.0 * std::numbers::pi);
             VecRandom::ReadFromJson(wpj, r);
             return [=](Particle& p, double) {
                 auto result = GenRandomVec3(r.min, r.max);
@@ -181,11 +182,13 @@ ParticleInitOp WPParticleParser::genParticleInitOp(const nlohmann::json& wpj) {
                 // limit direction
                 {
                     double c     = result.dot(forward) / (result.norm() * forward.norm());
-                    float  a     = std::acos(c) / M_PI;
+                    float  a     = static_cast<float>(std::acos(c) / std::numbers::pi);
                     float  scale = r.scale / 2.0f;
                     if (a > scale) {
                         auto axis = result.cross(forward).normalized();
-                        result    = AngleAxisf((a - a * scale) * M_PI, axis) * result;
+                        result = AngleAxisf(
+                                     static_cast<float>((a - a * scale) * std::numbers::pi), axis)
+                                 * result;
                     }
                 }
                 // offset
@@ -268,7 +271,7 @@ struct FrequencyValue {
     float scalemin { 0.0f };
     float scalemax { 1.0f };
     float phasemin { 0.0f };
-    float phasemax { static_cast<float>(2 * M_PI) };
+    float phasemax { static_cast<float>(2.0 * std::numbers::pi) };
 
     struct StorageRandom {
         bool  reset { true };
@@ -306,20 +309,21 @@ struct FrequencyValue {
         if (st.reset) {
             st.frequency = Random::get(frequencymin, frequencymax);
             st.scale     = Random::get(scalemin, scalemax);
-            st.phase     = (float)Random::get((double)phasemin, phasemax + 2.0 * M_PI);
+            st.phase =
+                static_cast<float>(Random::get((double)phasemin, phasemax + 2.0 * std::numbers::pi));
             st.reset     = false;
         }
     }
     inline double GetScale(uint32_t index, double time) {
         const auto& st = storage.at(index);
-        double      f  = st.frequency / (2.0f * M_PI);
-        double      w  = 2.0f * M_PI * f;
+        double      f  = st.frequency / (2.0 * std::numbers::pi);
+        double      w  = 2.0 * std::numbers::pi * f;
         return algorism::lerp((std::cos(w * time + st.phase) + 1.0f) * 0.5f, scalemin, scalemax);
     }
     inline double GetMove(uint32_t index, double time, double timePass) {
         const auto& st = storage.at(index);
-        double      f  = st.frequency / (2.0f * M_PI);
-        double      w  = 2.0f * M_PI * f;
+        double      f  = st.frequency / (2.0 * std::numbers::pi);
+        double      w  = 2.0 * std::numbers::pi * f;
         return -1.0f * st.scale * w * std::sin(w * time + st.phase) * timePass;
     }
 };

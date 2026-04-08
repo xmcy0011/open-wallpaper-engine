@@ -46,9 +46,14 @@ void updateCallback() {
 int main(int argc, char** argv) {
     argparse::ArgumentParser program("scene-viewer");
     setAndParseArg(program, argc, argv);
-    auto [w_width, w_height] = program.get<Resolution>(OPT_RESOLUTION);
+    auto resolution = program.get<Resolution>(OPT_RESOLUTION);
+    auto w_width    = static_cast<int>(resolution.w);
+    auto w_height   = static_cast<int>(resolution.h);
 
-    glfwInit();
+    if (glfwInit() != GLFW_TRUE) {
+        std::cout << "Failed to init GLFW" << std::endl;
+        return -1;
+    }
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     GLFWwindow* window = glfwCreateWindow(w_width, w_height, "WP", nullptr, nullptr);
 
@@ -65,7 +70,12 @@ int main(int argc, char** argv) {
     {
         uint32_t glfwExtCount = 0;
         auto     exts         = glfwGetRequiredInstanceExtensions(&glfwExtCount);
-        for (int i = 0; i < glfwExtCount; i++) {
+        if (exts == nullptr || glfwExtCount == 0) {
+            std::cout << "Failed to get required Vulkan extensions from GLFW" << std::endl;
+            glfwTerminate();
+            return -1;
+        }
+        for (uint32_t i = 0; i < glfwExtCount; i++) {
             sf_info.instanceExts.emplace_back(exts[i]);
         }
 
@@ -91,7 +101,9 @@ int main(int argc, char** argv) {
     psw->setPropertyInt32(wallpaper::PROPERTY_FPS, program.get<int32_t>(OPT_FPS));
 
     std::string cache_path = program.get<std::string>(OPT_CACHE_PATH);
-    if (cache_path.empty()) cache_path = wallpaper::platform::GetCachePath("wescene-renderer");
+    if (cache_path.empty()) {
+        cache_path = wallpaper::platform::GetCachePath("wescene-renderer").string();
+    }
     psw->setPropertyString(wallpaper::PROPERTY_CACHE_PATH, cache_path);
 
     glfwSetWindowUserPointer(window, &data);

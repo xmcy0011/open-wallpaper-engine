@@ -1,6 +1,16 @@
 find_package(OpenGL REQUIRED)
 find_package(Threads REQUIRED)
-pkg_check_modules(LZ4 REQUIRED liblz4)
+
+set(LZ4_LINK_DEPS "")
+set(LZ4_INCLUDE_DEPS "")
+if(WIN32)
+  find_package(lz4 CONFIG REQUIRED)
+  list(APPEND LZ4_LINK_DEPS lz4::lz4)
+else()
+  pkg_check_modules(LZ4 REQUIRED liblz4)
+  list(APPEND LZ4_LINK_DEPS ${LZ4_LIBRARIES})
+  list(APPEND LZ4_INCLUDE_DEPS ${LZ4_INCLUDE_DIRS})
+endif()
 
 option(ENABLE_RENDERDOC "Build with renderdoc api" OFF)
 
@@ -14,9 +24,15 @@ if(ENDIAN)
   add_compile_definitions(WP_BIG_ENDIAN)
 endif()
 
-set(warn_opts
-    -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wno-unused-variable
-    CACHE INTERNAL "")
+if(MSVC)
+  set(warn_opts
+      /W4 /permissive-
+      CACHE INTERNAL "")
+else()
+  set(warn_opts
+      -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wno-unused-variable
+      CACHE INTERNAL "")
+endif()
 
 include_directories(.)
 
@@ -65,8 +81,8 @@ set(InteralLib
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC wpUtils
-  PRIVATE ${InteralLib} nlohmann_json ${LZ4_LIBRARIES}
+  PRIVATE ${InteralLib} nlohmann_json ${LZ4_LINK_DEPS}
           ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
 
-target_include_directories(${PROJECT_NAME} PUBLIC . Swapchain)
+target_include_directories(${PROJECT_NAME} PUBLIC . Swapchain ${LZ4_INCLUDE_DEPS})
 set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)

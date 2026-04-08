@@ -409,10 +409,10 @@ void MainHandler::loadScene() {
     }
     std::filesystem::path pkgPath_fs { m_source };
     pkgPath_fs.replace_extension("pkg");
-    std::string pkgPath  = pkgPath_fs.native();
-    std::string pkgEntry = pkgPath_fs.filename().replace_extension("json").native();
-    std::string pkgDir   = pkgPath_fs.parent_path().native();
-    std::string scene_id = pkgPath_fs.parent_path().filename().native();
+    std::string pkgPath  = pkgPath_fs.string();
+    std::string pkgEntry = pkgPath_fs.filename().replace_extension("json").string();
+    std::string pkgDir   = pkgPath_fs.parent_path().string();
+    std::string scene_id = pkgPath_fs.parent_path().filename().string();
 
     // load pkgfile
     if (! vfs.Mount("/assets", fs::WPPkgFs::CreatePkgFs(pkgPath))) {

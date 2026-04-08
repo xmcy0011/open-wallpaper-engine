@@ -1,0 +1,1343 @@
+From 1ca8404ad74316b9af8ae8664740795b97aefba3 Mon Sep 17 00:00:00 2001
+From: xmcy0011 <xmcy0011@sina.com>
+Date: Wed, 8 Apr 2026 16:59:12 +0800
+Subject: [PATCH] chore: support windows
+
+---
+ .gitignore                                    |  1 +
+ src/CMakeLists.txt                            | 28 +++++++--
+ src/Core/Literals.hpp                         |  2 +
+ src/Fs/include/Fs/PhysicalFs.h                |  2 +-
+ src/Particle/WPParticleRawGener.cpp           | 19 ++++---
+ src/RenderGraph/RenderGraph.cpp               |  1 +
+ src/Scene/include/Scene/SceneRenderTarget.h   |  2 +-
+ src/SceneWallpaper.cpp                        |  8 +--
+ src/Swapchain/TripleSwapchain.hpp             |  5 +-
+ src/Utils/Algorism.cpp                        |  4 +-
+ src/Utils/CMakeLists.txt                      |  2 +-
+ src/Utils/DynamicLibrary.cpp                  | 24 +++++++-
+ src/Utils/FpsCounter.cpp                      |  2 +-
+ src/Utils/Logging.cpp                         |  6 +-
+ src/Utils/Sha.cpp                             |  2 +-
+ src/Vulkan/CMakeLists.txt                     | 16 +++++-
+ src/Vulkan/Device.cpp                         |  2 +-
+ src/Vulkan/Instance.cpp                       | 38 +++++++------
+ src/Vulkan/Shader.cpp                         |  4 +-
+ src/Vulkan/StagingBuffer.cpp                  |  4 +-
+ src/Vulkan/Swapchain.cpp                      |  2 +-
+ src/Vulkan/TextureCache.cpp                   |  2 +-
+ src/Vulkan/include/Vulkan/Parameters.hpp      |  8 ++-
+ src/Vulkan/include/Vulkan/Shader.hpp          |  9 +--
+ src/Vulkan/include/Vulkan/ShaderComp.hpp      |  3 +-
+ src/Vulkan/include/Vulkan/TextureCache.hpp    |  4 +-
+ .../include/Vulkan/VulkanExSwapchain.hpp      |  9 +--
+ src/Vulkan/include/vvk/handle.hpp             | 29 +++++-----
+ src/Vulkan/include/vvk/vma_wrapper.hpp        | 22 ++++---
+ src/Vulkan/include/vvk/vulkan_wrapper.hpp     |  4 +-
+ src/VulkanRender/CMakeLists.txt               |  5 +-
+ src/VulkanRender/CustomShaderPass.cpp         |  7 ++-
+ src/VulkanRender/FinPass.cpp                  |  3 +-
+ src/VulkanRender/RenderDoc.h                  | 43 ++++++++------
+ src/VulkanRender/VulkanPass.hpp               |  1 +
+ src/VulkanRender/VulkanRender.cpp             |  4 ++
+ src/WPParticleParser.cpp                      | 22 ++++---
+ src/WPPuppet.cpp                              |  5 +-
+ standalone_view/CMakeLists.txt                | 57 ++++++++++++++++---
+ standalone_view/arg.hpp                       |  8 ++-
+ standalone_view/glfwviewer.cpp                | 20 +++++--
+ vcpkg-configuration.json                      | 14 +++++
+ vcpkg.json                                    |  6 ++
+ 43 files changed, 315 insertions(+), 144 deletions(-)
+ create mode 100644 vcpkg-configuration.json
+ create mode 100644 vcpkg.json
+
+diff --git a/.gitignore b/.gitignore
+index a67e93c..81771af 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -18,3 +18,4 @@ build
+ .cache
+ cmake-build-debug
+ build-*
++vcpkg_installed/*
+\ No newline at end of file
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 8dd28c9..73b2d6b 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -1,6 +1,16 @@
+ find_package(OpenGL REQUIRED)
+ find_package(Threads REQUIRED)
+-pkg_check_modules(LZ4 REQUIRED liblz4)
++
++set(LZ4_LINK_DEPS "")
++set(LZ4_INCLUDE_DEPS "")
++if(WIN32)
++  find_package(lz4 CONFIG REQUIRED)
++  list(APPEND LZ4_LINK_DEPS lz4::lz4)
++else()
++  pkg_check_modules(LZ4 REQUIRED liblz4)
++  list(APPEND LZ4_LINK_DEPS ${LZ4_LIBRARIES})
++  list(APPEND LZ4_INCLUDE_DEPS ${LZ4_INCLUDE_DIRS})
++endif()
+ 
+ option(ENABLE_RENDERDOC "Build with renderdoc api" OFF)
+ 
+@@ -14,9 +24,15 @@ if(ENDIAN)
+   add_compile_definitions(WP_BIG_ENDIAN)
+ endif()
+ 
+-set(warn_opts
+-    -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wno-unused-variable
+-    CACHE INTERNAL "")
++if(MSVC)
++  set(warn_opts
++      /W4 /permissive-
++      CACHE INTERNAL "")
++else()
++  set(warn_opts
++      -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wno-unused-variable
++      CACHE INTERNAL "")
++endif()
+ 
+ include_directories(.)
+ 
+@@ -65,8 +81,8 @@ set(InteralLib
+ target_link_libraries(
+   ${PROJECT_NAME}
+   PUBLIC wpUtils
+-  PRIVATE ${InteralLib} nlohmann_json ${LZ4_LIBRARIES}
++  PRIVATE ${InteralLib} nlohmann_json ${LZ4_LINK_DEPS}
+           ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
+ 
+-target_include_directories(${PROJECT_NAME} PUBLIC . Swapchain)
++target_include_directories(${PROJECT_NAME} PUBLIC . Swapchain ${LZ4_INCLUDE_DEPS})
+ set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
+diff --git a/src/Core/Literals.hpp b/src/Core/Literals.hpp
+index f736aec..1a0084e 100644
+--- a/src/Core/Literals.hpp
++++ b/src/Core/Literals.hpp
+@@ -15,6 +15,8 @@ using u8  = std::uint8_t;
+ using u16 = std::uint16_t;
+ using u32 = std::uint32_t;
+ using u64 = std::uint64_t;
++// Compatibility alias for legacy code paths.
++using uint = std::uint32_t;
+ 
+ using idx   = std::ptrdiff_t;
+ using usize = std::size_t;
+diff --git a/src/Fs/include/Fs/PhysicalFs.h b/src/Fs/include/Fs/PhysicalFs.h
+index 836bcea..ae1afde 100644
+--- a/src/Fs/include/Fs/PhysicalFs.h
++++ b/src/Fs/include/Fs/PhysicalFs.h
+@@ -24,7 +24,7 @@ public:
+     std::shared_ptr<IBinaryStreamW> OpenW(std::string_view path) override {
+         std::filesystem::path full_path { FullPath(path) };
+         std::filesystem::create_directories(full_path.parent_path());
+-        return CreateCBinaryStreamW(full_path.native());
++        return CreateCBinaryStreamW(full_path.string());
+     }
+ 
+ private:
+diff --git a/src/Particle/WPParticleRawGener.cpp b/src/Particle/WPParticleRawGener.cpp
+index 7087094..2b53a75 100644
+--- a/src/Particle/WPParticleRawGener.cpp
++++ b/src/Particle/WPParticleRawGener.cpp
+@@ -3,6 +3,7 @@
+ #include <cstring>
+ #include <Eigen/Dense>
+ #include <array>
++#include <numbers>
+ 
+ #include "Core/Literals.hpp"
+ #include "SpecTexs.hpp"
+@@ -21,17 +22,17 @@ struct WPGOption {
+ 
+ namespace
+ {
+-inline void AssignVertexTimes(std::span<float> dst, std::span<const float> src, uint num) noexcept {
+-    const uint dst_one_size = dst.size() / num;
+-    for (uint i = 0; i < num; i++) {
++inline void AssignVertexTimes(std::span<float> dst, std::span<const float> src, u32 num) noexcept {
++    const u32 dst_one_size = static_cast<u32>(dst.size() / num);
++    for (u32 i = 0; i < num; i++) {
+         std::copy(src.begin(), src.end(), dst.begin() + i * dst_one_size);
+     }
+ }
+ 
+-inline void AssignVertex(std::span<float> dst, std::span<const float> src, uint num) noexcept {
+-    const uint dst_one_size = dst.size() / num;
+-    const uint src_one_size = src.size() / num;
+-    for (uint i = 0; i < num; i++) {
++inline void AssignVertex(std::span<float> dst, std::span<const float> src, u32 num) noexcept {
++    const u32 dst_one_size = static_cast<u32>(dst.size() / num);
++    const u32 src_one_size = static_cast<u32>(src.size() / num);
++    for (u32 i = 0; i < num; i++) {
+         std::copy_n(src.begin() + i * src_one_size, src_one_size, dst.begin() + i * dst_one_size);
+     }
+ }
+@@ -124,7 +125,7 @@ inline size_t GenRopeParticleData(std::span<const Particle>   particles,
+ 
+     const auto one_size   = sv.OneSize();
+     const auto totle_size = one_size * 4;
+-    uint       i { 0 };
++    u32        i { 0 };
+     for (const auto& p : particles) {
+         if (i == 0) {
+             i++;
+@@ -141,7 +142,7 @@ inline size_t GenRopeParticleData(std::span<const Particle>   particles,
+         float in_ParticleTrailLength   = particles.size();
+         float in_ParticleTrailPosition = i - 1;
+ 
+-        Vector3f cp_vec = AngleAxisf(p.rotation[2] + M_PI / 2.0f, Vector3f::UnitZ()) *
++        Vector3f cp_vec = AngleAxisf(p.rotation[2] + std::numbers::pi_v<float> / 2.0f, Vector3f::UnitZ()) *
+                           Vector3f { 0.0f, size / 2.0f, 0.0f };
+         Vector3f pos_vec = Vector3f { p.position } - Vector3f { pre_p.position };
+ 
+diff --git a/src/RenderGraph/RenderGraph.cpp b/src/RenderGraph/RenderGraph.cpp
+index 576a09e..b929d6d 100644
+--- a/src/RenderGraph/RenderGraph.cpp
++++ b/src/RenderGraph/RenderGraph.cpp
+@@ -1,5 +1,6 @@
+ #include <cassert>
+ #include <algorithm>
++#include <iterator>
+ 
+ #include "RenderGraph.hpp"
+ 
+diff --git a/src/Scene/include/Scene/SceneRenderTarget.h b/src/Scene/include/Scene/SceneRenderTarget.h
+index 399477c..5eb9372 100644
+--- a/src/Scene/include/Scene/SceneRenderTarget.h
++++ b/src/Scene/include/Scene/SceneRenderTarget.h
+@@ -18,7 +18,7 @@ struct SceneRenderTarget {
+     bool          allowReuse { false };
+     bool          withDepth { false };
+     bool          has_mipmap { false };
+-    uint          mipmap_level { 1 };
++    u32           mipmap_level { 1 };
+     TextureSample sample { TextureWrap::CLAMP_TO_EDGE,
+                            TextureWrap::CLAMP_TO_EDGE,
+                            TextureFilter::LINEAR,
+diff --git a/src/SceneWallpaper.cpp b/src/SceneWallpaper.cpp
+index e5bfbec..717629e 100644
+--- a/src/SceneWallpaper.cpp
++++ b/src/SceneWallpaper.cpp
+@@ -409,10 +409,10 @@ void MainHandler::loadScene() {
+     }
+     std::filesystem::path pkgPath_fs { m_source };
+     pkgPath_fs.replace_extension("pkg");
+-    std::string pkgPath  = pkgPath_fs.native();
+-    std::string pkgEntry = pkgPath_fs.filename().replace_extension("json").native();
+-    std::string pkgDir   = pkgPath_fs.parent_path().native();
+-    std::string scene_id = pkgPath_fs.parent_path().filename().native();
++    std::string pkgPath  = pkgPath_fs.string();
++    std::string pkgEntry = pkgPath_fs.filename().replace_extension("json").string();
++    std::string pkgDir   = pkgPath_fs.parent_path().string();
++    std::string scene_id = pkgPath_fs.parent_path().filename().string();
+ 
+     // load pkgfile
+     if (! vfs.Mount("/assets", fs::WPPkgFs::CreatePkgFs(pkgPath))) {
+diff --git a/src/Swapchain/TripleSwapchain.hpp b/src/Swapchain/TripleSwapchain.hpp
+index a824ffd..197b3ed 100644
+--- a/src/Swapchain/TripleSwapchain.hpp
++++ b/src/Swapchain/TripleSwapchain.hpp
+@@ -1,5 +1,6 @@
+ #pragma once
+ #include <atomic>
++#include <cstdint>
+ #include "Core/NoCopyMove.hpp"
+ 
+ namespace wallpaper
+@@ -21,8 +22,8 @@ public:
+     }
+     T* getInprogress() { return inprogress(); }
+ 
+-    virtual uint width() const  = 0;
+-    virtual uint height() const = 0;
++    virtual std::uint32_t width() const  = 0;
++    virtual std::uint32_t height() const = 0;
+ 
+ protected:
+     TripleSwapchain() = default;
+diff --git a/src/Utils/Algorism.cpp b/src/Utils/Algorism.cpp
+index 3156eb8..77aa190 100644
+--- a/src/Utils/Algorism.cpp
++++ b/src/Utils/Algorism.cpp
+@@ -1,5 +1,5 @@
+-#include "Algorism.h"
+-#include "Eigen.h"
++#include "Utils/Algorism.h"
++#include "Utils/Eigen.h"
+ 
+ using namespace wallpaper;
+ using namespace Eigen;
+diff --git a/src/Utils/CMakeLists.txt b/src/Utils/CMakeLists.txt
+index afcccfc..2c201ff 100644
+--- a/src/Utils/CMakeLists.txt
++++ b/src/Utils/CMakeLists.txt
+@@ -12,6 +12,6 @@ DynamicLibrary.cpp
+ target_link_libraries(${LIB_NAME}
+ PRIVATE
+ )
+-target_include_directories(${LIB_NAME} PUBLIC include PRIVATE include/Utils)
++target_include_directories(${LIB_NAME} PUBLIC include)
+ target_compile_options(${LIB_NAME} PRIVATE ${warn_opts})
+ set_property(TARGET ${LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
+diff --git a/src/Utils/DynamicLibrary.cpp b/src/Utils/DynamicLibrary.cpp
+index 2a5d933..9d08529 100644
+--- a/src/Utils/DynamicLibrary.cpp
++++ b/src/Utils/DynamicLibrary.cpp
+@@ -1,6 +1,13 @@
+-#include "DynamicLibrary.hpp"
++#include "Utils/DynamicLibrary.hpp"
+ 
+-#include "dlfcn.h"
++#if defined(_WIN32)
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#else
++#include <dlfcn.h>
++#endif
+ 
+ namespace utils
+ {
+@@ -21,7 +28,11 @@ DynamicLibrary& DynamicLibrary::operator=(DynamicLibrary&& o) noexcept {
+ }
+ 
+ bool DynamicLibrary::Open(const char* filename) {
++#if defined(_WIN32)
++    handle = reinterpret_cast<void*>(::LoadLibraryA(filename));
++#else
+     handle = dlopen(filename, RTLD_NOW);
++#endif
+     return IsOpen();
+ }
+ 
+@@ -29,13 +40,22 @@ bool DynamicLibrary::IsOpen() const { return handle != nullptr; }
+ 
+ void DynamicLibrary::Close() {
+     if (IsOpen()) {
++#if defined(_WIN32)
++        ::FreeLibrary(reinterpret_cast<HMODULE>(handle));
++#else
+         dlclose(handle);
++#endif
+         handle = nullptr;
+     }
+ }
+ 
+ void* DynamicLibrary::GetSymbolAddr(const char* name) const {
++#if defined(_WIN32)
++    return reinterpret_cast<void*>(
++        ::GetProcAddress(reinterpret_cast<HMODULE>(handle), name));
++#else
+     return reinterpret_cast<void*>(dlsym(handle, name));
++#endif
+ }
+ 
+ }; // namespace wallpaper
+diff --git a/src/Utils/FpsCounter.cpp b/src/Utils/FpsCounter.cpp
+index 8baca97..30b92b8 100644
+--- a/src/Utils/FpsCounter.cpp
++++ b/src/Utils/FpsCounter.cpp
+@@ -1,4 +1,4 @@
+-#include "FpsCounter.h"
++#include "Utils/FpsCounter.h"
+ #include <iostream>
+ #include <chrono>
+ 
+diff --git a/src/Utils/Logging.cpp b/src/Utils/Logging.cpp
+index a7be981..bfe5360 100644
+--- a/src/Utils/Logging.cpp
++++ b/src/Utils/Logging.cpp
+@@ -1,9 +1,9 @@
+-#include "Logging.h"
++#include "Utils/Logging.h"
+ #include <cstdio>
+ #include <cstdarg>
+ #include <filesystem>
+ 
+-#include "Sha.hpp"
++#include "Utils/Sha.hpp"
+ 
+ constexpr const char* level_names[] = { "INFO", "ERROR" };
+ constexpr const char* level_fmt[]   = { "%-5s", "%-5s %s:%d " };
+@@ -24,7 +24,7 @@ std::string logToTmpfileWithSha1(std::span<const char> in, const char* fmt, ...)
+     std::va_list          args;
+     std::string           name   = utils::genSha1(in);
+     std::filesystem::path fspath = std::filesystem::temp_directory_path() / name;
+-    std::string           path   = fspath.native();
++    std::string           path   = fspath.string();
+     auto*                 file   = std::fopen(path.c_str(), "w+");
+     {
+         va_start(args, fmt);
+diff --git a/src/Utils/Sha.cpp b/src/Utils/Sha.cpp
+index 4c3fd91..8a1d12f 100644
+--- a/src/Utils/Sha.cpp
++++ b/src/Utils/Sha.cpp
+@@ -1,4 +1,4 @@
+-#include "Sha.hpp"
++#include "Utils/Sha.hpp"
+ #include <vog/sha1.hpp>
+ 
+ std::string utils::genSha1(std::span<const char> in) {
+diff --git a/src/Vulkan/CMakeLists.txt b/src/Vulkan/CMakeLists.txt
+index c816814..3a282ee 100644
+--- a/src/Vulkan/CMakeLists.txt
++++ b/src/Vulkan/CMakeLists.txt
+@@ -1,6 +1,7 @@
+ set(LIB_NAME wpVulkan)
+ 
+ find_package(Vulkan REQUIRED)
++add_compile_definitions(VK_USE_64_BIT_PTR_DEFINES=1)
+ 
+ add_library(${LIB_NAME}
+ STATIC
+@@ -25,6 +26,17 @@ PUBLIC
+ PRIVATE
+ 	SPIRV
+ )
+-target_include_directories(${LIB_NAME} PUBLIC include PRIVATE include/Vulkan include/vkk)
+-target_compile_options(${LIB_NAME} PRIVATE ${warn_opts} -Wno-missing-field-initializers)
++target_include_directories(
++  ${LIB_NAME}
++  BEFORE
++  PUBLIC include ${Vulkan_INCLUDE_DIRS}
++  PRIVATE include/Vulkan include/vkk)
++target_include_directories(
++  ${LIB_NAME}
++  BEFORE
++  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/glslang)
++target_compile_options(${LIB_NAME} PRIVATE ${warn_opts})
++if(NOT MSVC)
++  target_compile_options(${LIB_NAME} PRIVATE -Wno-missing-field-initializers)
++endif()
+ set_property(TARGET ${LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
+diff --git a/src/Vulkan/Device.cpp b/src/Vulkan/Device.cpp
+index 4ae1eaa..b35fd35 100644
+--- a/src/Vulkan/Device.cpp
++++ b/src/Vulkan/Device.cpp
+@@ -25,7 +25,7 @@ bool Device::CheckGPU(vvk::PhysicalDevice gpu, std::span<const Extension> exts,
+     // check queue
+     bool has_graphics_queue { false };
+     bool has_present_queue { false };
+-    uint index { 0 };
++    uint32_t index { 0 };
+     for (auto& prop : props) {
+         if (prop.queueFlags & VK_QUEUE_GRAPHICS_BIT) has_graphics_queue = true;
+         if (surface) {
+diff --git a/src/Vulkan/Instance.cpp b/src/Vulkan/Instance.cpp
+index 3df0ea4..e8f77ae 100644
+--- a/src/Vulkan/Instance.cpp
++++ b/src/Vulkan/Instance.cpp
+@@ -1,6 +1,7 @@
+ #include "Instance.hpp"
+ #include "Device.hpp"
+ 
++#include <array>
+ #include <cstdio>
+ #include "Utils/Logging.h"
+ 
+@@ -15,10 +16,11 @@ constexpr std::array base_inst_exts { Extension { true, VK_EXT_DEBUG_UTILS_EXTEN
+ namespace
+ {
+ 
+-VkBool32 DebugUtilsMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
+-                                     VkDebugUtilsMessageTypeFlagsEXT             messageType,
+-                                     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+-                                     void*                                       pUserData) {
++VKAPI_ATTR VkBool32 VKAPI_CALL
++DebugUtilsMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
++                            VkDebugUtilsMessageTypeFlagsEXT             messageType,
++                            const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
++                            void*                                       pUserData) {
+     VkBool32 result = VK_FALSE;
+     if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+         result |= VK_TRUE;
+@@ -29,20 +31,20 @@ VkBool32 DebugUtilsMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT
+ }
+ 
+ vvk::DebugUtilsMessenger SetupDebugCallback(vvk::Instance& instance) {
+-    return instance.CreateDebugUtilsMessenger(VkDebugUtilsMessengerCreateInfoEXT {
+-        .sType           = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+-        .pNext           = nullptr,
+-        .flags           = 0,
+-        .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
+-                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+-                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+-                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT,
+-        .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+-                       VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+-                       VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+-        .pfnUserCallback = DebugUtilsMessengerCallback,
+-        .pUserData       = nullptr,
+-    });
++    VkDebugUtilsMessengerCreateInfoEXT ci {};
++    ci.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
++    ci.pNext = nullptr;
++    ci.flags = 0;
++    ci.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
++                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
++                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
++                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
++    ci.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
++                     VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
++                     VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
++    ci.pfnUserCallback = DebugUtilsMessengerCallback;
++    ci.pUserData       = nullptr;
++    return instance.CreateDebugUtilsMessenger(ci);
+ }
+ 
+ VkResult CreatInstance(vvk::Instance* inst, std::span<const std::string_view> exts,
+diff --git a/src/Vulkan/Shader.cpp b/src/Vulkan/Shader.cpp
+index e91ed11..932e31a 100644
+--- a/src/Vulkan/Shader.cpp
++++ b/src/Vulkan/Shader.cpp
+@@ -56,7 +56,7 @@ inline VkShaderStageFlagBits ToVkType(SpvReflectShaderStageFlagBits s) {
+ 
+ template<typename VEC, typename FUNC>
+ bool EnumAllRef(VEC& vec, FUNC&& func) {
+-    uint count { 0 };
++    uint32_t count { 0 };
+     auto result = func(&count, nullptr);
+     assert(result == SPV_REFLECT_RESULT_SUCCESS);
+     vec.resize(count);
+@@ -313,7 +313,7 @@ static bool GetReflectedInfo(glslang::TProgram& pro, ShaderReflected& ref, const
+ };
+ */
+ 
+-bool wallpaper::vulkan::GenReflect(std::span<const std::vector<uint>> codes,
++bool wallpaper::vulkan::GenReflect(std::span<const std::vector<std::uint32_t>> codes,
+                                    std::vector<Uni_ShaderSpv>& spvs, ShaderReflected& ref) {
+     spvs.clear();
+     for (const auto& code : codes) {
+diff --git a/src/Vulkan/StagingBuffer.cpp b/src/Vulkan/StagingBuffer.cpp
+index 800df6a..b251a3e 100644
+--- a/src/Vulkan/StagingBuffer.cpp
++++ b/src/Vulkan/StagingBuffer.cpp
+@@ -210,7 +210,7 @@ bool StagingBuffer::writeToBuf(const StagingBufferRef& ref, std::span<uint8_t> d
+     if (m_stage_raw == nullptr) {
+         mapStageBuf();
+     }
+-    VkDeviceSize size = std::min(ref.size - offset, data.size());
++    VkDeviceSize size = std::min<VkDeviceSize>(ref.size - offset, data.size());
+     uint8_t*     raw  = (uint8_t*)m_stage_raw;
+     std::copy(data.begin(), data.begin() + size, raw + ref.offset + offset);
+     return true;
+@@ -222,7 +222,7 @@ bool StagingBuffer::fillBuf(const StagingBufferRef& ref, size_t offset, size_t s
+     if (m_stage_raw == nullptr) {
+         mapStageBuf();
+     }
+-    VkDeviceSize size_     = std::min(ref.size - offset, size);
++    VkDeviceSize size_     = std::min<VkDeviceSize>(ref.size - offset, size);
+     uint8_t*     raw       = (uint8_t*)m_stage_raw;
+     uint8_t*     raw_begin = raw + ref.offset + offset;
+     std::fill(raw_begin, raw_begin + size_, c);
+diff --git a/src/Vulkan/Swapchain.cpp b/src/Vulkan/Swapchain.cpp
+index 98281dd..5200bf3 100644
+--- a/src/Vulkan/Swapchain.cpp
++++ b/src/Vulkan/Swapchain.cpp
+@@ -132,7 +132,7 @@ bool Swapchain::Create(Device& device, VkSurfaceKHR surface, VkExtent2D extent,
+         .compositeAlpha   = compositeAlpha,
+         .presentMode      = swap.m_present_mode,
+         .clipped          = true,
+-        .oldSwapchain     = nullptr,
++        .oldSwapchain     = VK_NULL_HANDLE,
+     };
+ 
+     VVK_CHECK_BOOL_RE(device.device().CreateSwapchainKHR(sci, swap.m_handle));
+diff --git a/src/Vulkan/TextureCache.cpp b/src/Vulkan/TextureCache.cpp
+index 4f76e34..5bd9d1c 100644
+--- a/src/Vulkan/TextureCache.cpp
++++ b/src/Vulkan/TextureCache.cpp
+@@ -624,7 +624,7 @@ void TextureCache::RecGenerateMipmaps(vvk::CommandBuffer& cmd, const ImageParame
+     i32 mipWidth  = (i32)image.extent.width;
+     i32 mipHeight = (i32)image.extent.height;
+ 
+-    for (uint i = 1; i < image.mipmap_level; i++) {
++    for (uint32_t i = 1; i < image.mipmap_level; i++) {
+         barrier.subresourceRange.baseMipLevel = i - 1;
+         barrier.oldLayout                     = i == 1 ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                                                        : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+diff --git a/src/Vulkan/include/Vulkan/Parameters.hpp b/src/Vulkan/include/Vulkan/Parameters.hpp
+index 1ae1b80..25217fb 100644
+--- a/src/Vulkan/include/Vulkan/Parameters.hpp
++++ b/src/Vulkan/include/Vulkan/Parameters.hpp
+@@ -1,5 +1,7 @@
+ #pragma once
+ 
++#include <cstdint>
++
+ #include "Instance.hpp"
+ #include "Swapchain.hpp"
+ #include "Core/NoCopyMove.hpp"
+@@ -40,7 +42,7 @@ struct VmaImageParameters : NoCopy {
+     vvk::ImageView view;
+     vvk::Sampler   sampler;
+     VkExtent3D     extent;
+-    uint           mipmap_level { 1 };
++    std::uint32_t  mipmap_level { 1 };
+ 
+     VmaImageParameters();
+     ~VmaImageParameters();
+@@ -56,7 +58,7 @@ struct ExImageParameters : NoCopy {
+     vvk::ImageView view;
+     vvk::Sampler   sampler;
+     VkExtent3D     extent;
+-    uint           mipmap_level { 1 };
++    std::uint32_t  mipmap_level { 1 };
+     int            fd { 0 };
+ 
+     ExImageParameters();
+@@ -70,7 +72,7 @@ struct ImageParameters {
+     VkImageView view;
+     VkSampler   sampler;
+     VkExtent3D  extent;
+-    uint        mipmap_level { 1 };
++    std::uint32_t mipmap_level { 1 };
+ 
+     ImageParameters()  = default;
+     ~ImageParameters() = default;
+diff --git a/src/Vulkan/include/Vulkan/Shader.hpp b/src/Vulkan/include/Vulkan/Shader.hpp
+index 7c8b385..619ab57 100644
+--- a/src/Vulkan/include/Vulkan/Shader.hpp
++++ b/src/Vulkan/include/Vulkan/Shader.hpp
+@@ -1,4 +1,5 @@
+ #pragma once
++#include <cstdint>
+ #include "Instance.hpp"
+ #include "ShaderComp.hpp"
+ #include <glslang/Include/BaseTypes.h>
+@@ -13,13 +14,13 @@ VkFormat ToVkType(glslang::TBasicType, size_t);
+ struct ShaderReflected {
+     struct BlockedUniform {
+         int    block_index;
+-        uint   offset;
++        std::uint32_t offset;
+         size_t size { 0 };
+         size_t num { 1 }; // for array,vector,matrix
+     };
+     struct Block {
+         int         index;
+-        uint        size;
++        std::uint32_t size;
+         std::string name;
+ 
+         Map<std::string, BlockedUniform> member_map;
+@@ -29,13 +30,13 @@ struct ShaderReflected {
+     Map<std::string, VkDescriptorSetLayoutBinding> binding_map;
+ 
+     struct Input {
+-        uint     location;
++        std::uint32_t location;
+         VkFormat format;
+     };
+     Map<std::string, Input> input_location_map;
+ };
+ 
+-bool GenReflect(std::span<const std::vector<uint>> codes, std::vector<Uni_ShaderSpv>& spvs,
++bool GenReflect(std::span<const std::vector<std::uint32_t>> codes, std::vector<Uni_ShaderSpv>& spvs,
+                 ShaderReflected& ref);
+ } // namespace vulkan
+ } // namespace wallpaper
+diff --git a/src/Vulkan/include/Vulkan/ShaderComp.hpp b/src/Vulkan/include/Vulkan/ShaderComp.hpp
+index df5606b..4245a52 100644
+--- a/src/Vulkan/include/Vulkan/ShaderComp.hpp
++++ b/src/Vulkan/include/Vulkan/ShaderComp.hpp
+@@ -1,4 +1,5 @@
+ #pragma once
++#include <cstdint>
+ #include <span>
+ #include "Spv.hpp"
+ #include <glslang/Public/ShaderLang.h>
+@@ -29,7 +30,7 @@ struct ShaderCompOpt {
+     // keywords
+     bool relaxed_rules_vulkan { false };
+     // for global unifom block
+-    uint global_uniform_binding { 0 };
++    std::uint32_t global_uniform_binding { 0 };
+ 
+     // relfect:
+     bool reflect_all_io_var { true };
+diff --git a/src/Vulkan/include/Vulkan/TextureCache.hpp b/src/Vulkan/include/Vulkan/TextureCache.hpp
+index a4814a2..494d116 100644
+--- a/src/Vulkan/include/Vulkan/TextureCache.hpp
++++ b/src/Vulkan/include/Vulkan/TextureCache.hpp
+@@ -1,5 +1,7 @@
+ #pragma once
+ 
++#include <cstdint>
++
+ #include "Parameters.hpp"
+ #include "Type.hpp"
+ #include "Core/NoCopyMove.hpp"
+@@ -31,7 +33,7 @@ struct TextureKey {
+     TexUsage      usage;
+     TextureFormat format;
+     TextureSample sample;
+-    uint          mipmap_level { 1 };
++    std::uint32_t mipmap_level { 1 };
+ 
+     static TexHash HashValue(const TextureKey&);
+ };
+diff --git a/src/Vulkan/include/Vulkan/VulkanExSwapchain.hpp b/src/Vulkan/include/Vulkan/VulkanExSwapchain.hpp
+index 4c4336e..a3c892c 100644
+--- a/src/Vulkan/include/Vulkan/VulkanExSwapchain.hpp
++++ b/src/Vulkan/include/Vulkan/VulkanExSwapchain.hpp
+@@ -3,6 +3,7 @@
+ #include "Swapchain/ExSwapchain.hpp"
+ #include "Device.hpp"
+ #include <cstdio>
++#include <cstdint>
+ 
+ namespace wallpaper
+ {
+@@ -48,8 +49,8 @@ public:
+     }
+     virtual ~VulkanExSwapchain() = default;
+ 
+-    uint width() const override { return m_extent.width; }
+-    uint height() const override { return m_extent.height; }
++    std::uint32_t width() const override { return m_extent.width; }
++    std::uint32_t height() const override { return m_extent.height; }
+ 
+     const auto& handles() const { return m_handles; }
+ 
+@@ -72,8 +73,8 @@ private:
+     VkExtent2D                    m_extent;
+ };
+ 
+-inline std::unique_ptr<VulkanExSwapchain> CreateExSwapchain(const Device& device, uint w, uint h,
+-                                                            VkImageTiling tiling) {
++inline std::unique_ptr<VulkanExSwapchain> CreateExSwapchain(const Device& device, std::uint32_t w,
++                                                            std::uint32_t h, VkImageTiling tiling) {
+     std::array<VulkanExHandle, 3> handles;
+     for (auto& handle : handles) {
+         if (auto rv = device.tex_cache().CreateExTex(w, h, VK_FORMAT_R8G8B8A8_UNORM, tiling);
+diff --git a/src/Vulkan/include/vvk/handle.hpp b/src/Vulkan/include/vvk/handle.hpp
+index 387899d..0eed517 100644
+--- a/src/Vulkan/include/vvk/handle.hpp
++++ b/src/Vulkan/include/vvk/handle.hpp
+@@ -21,10 +21,10 @@ public:
+     Handle(std::nullptr_t) {}
+ 
+     Handle(Handle&& rhs) noexcept
+-        : handle { std::exchange(rhs.handle, nullptr) }, owner { rhs.owner }, dld { rhs.dld } {}
++        : handle { std::exchange(rhs.handle, Type {}) }, owner { rhs.owner }, dld { rhs.dld } {}
+     Handle& operator=(Handle&& rhs) noexcept {
+         Release();
+-        handle = std::exchange(rhs.handle, nullptr);
++        handle = std::exchange(rhs.handle, Type {});
+         owner  = rhs.owner;
+         dld    = rhs.dld;
+         return *this;
+@@ -36,7 +36,7 @@ public:
+     /// Destroys any held object.
+     void reset() noexcept {
+         Release();
+-        handle = nullptr;
++        handle = Type {};
+     }
+ 
+     /// Returns the address of the held object.
+@@ -47,11 +47,11 @@ public:
+     const Type& operator*() const noexcept { return handle; }
+ 
+     /// Returns true when there's a held object.
+-    explicit operator bool() const noexcept { return handle != nullptr; }
++    explicit operator bool() const noexcept { return handle != Type {}; }
+ 
+ protected:
+-    Type            handle = nullptr;
+-    OwnerType       owner  = nullptr;
++    Type            handle {};
++    OwnerType       owner {};
+     const Dispatch* dld    = nullptr;
+ 
+ private:
+@@ -78,10 +78,11 @@ public:
+     Handle() = default;
+     Handle(std::nullptr_t) {}
+ 
+-    Handle(Handle&& rhs) noexcept: handle { std::exchange(rhs.handle, nullptr) }, dld { rhs.dld } {}
++    Handle(Handle&& rhs) noexcept
++        : handle { std::exchange(rhs.handle, Type {}) }, dld { rhs.dld } {}
+     Handle& operator=(Handle&& rhs) noexcept {
+         Release();
+-        handle = std::exchange(rhs.handle, nullptr);
++        handle = std::exchange(rhs.handle, Type {});
+         dld    = rhs.dld;
+         return *this;
+     }
+@@ -92,7 +93,7 @@ public:
+     /// Destroys any held object.
+     void reset() noexcept {
+         Release();
+-        handle = nullptr;
++        handle = Type {};
+     }
+ 
+     /// Returns the address of the held object.
+@@ -103,10 +104,10 @@ public:
+     const Type& operator*() const noexcept { return handle; }
+ 
+     /// Returns true when there's a held object.
+-    explicit operator bool() const noexcept { return handle != nullptr; }
++    explicit operator bool() const noexcept { return handle != Type {}; }
+ 
+ protected:
+-    Type            handle = nullptr;
++    Type            handle {};
+     const Dispatch* dld    = nullptr;
+ 
+ private:
+@@ -134,7 +135,7 @@ public:
+     /// Destroys the current handle if it existed.
+ 
+     /// Destroys any held object.
+-    void reset() noexcept { handle = nullptr; }
++    void reset() noexcept { handle = Type {}; }
+ 
+     /// Returns the address of the held object.
+     /// Intended for Vulkan structures that expect a pointer to an array.
+@@ -144,10 +145,10 @@ public:
+     const Type& operator*() const noexcept { return handle; }
+ 
+     /// Returns true when there's a held object.
+-    explicit operator bool() const noexcept { return handle != nullptr; }
++    explicit operator bool() const noexcept { return handle != Type {}; }
+ 
+ protected:
+-    Type            handle = nullptr;
++    Type            handle {};
+     const Dispatch* dld    = nullptr;
+ };
+ 
+diff --git a/src/Vulkan/include/vvk/vma_wrapper.hpp b/src/Vulkan/include/vvk/vma_wrapper.hpp
+index c43d3e6..846c6e9 100644
+--- a/src/Vulkan/include/vvk/vma_wrapper.hpp
++++ b/src/Vulkan/include/vvk/vma_wrapper.hpp
+@@ -29,10 +29,13 @@ struct VmaOwner {
+ 
+ inline void Destroy(VmaAllocator allocator, int) { vmaDestroyAllocator(allocator); }
+ 
+-inline void Destroy(VmaOwner owner, VkBuffer handle, int) {
++struct VmaBufferDispatch {};
++struct VmaImageDispatch {};
++
++inline void Destroy(VmaOwner owner, VkBuffer handle, const VmaBufferDispatch&) {
+     vmaDestroyBuffer(owner.allocator, handle, owner.allocation);
+ }
+-inline void Destroy(VmaOwner owner, VkImage handle, int) {
++inline void Destroy(VmaOwner owner, VkImage handle, const VmaImageDispatch&) {
+     vmaDestroyImage(owner.allocator, handle, owner.allocation);
+ }
+ 
+@@ -59,8 +62,8 @@ private:
+     VmaAllocator m_allocator {};
+ };
+ 
+-class VmaBuffer : public Handle<VkBuffer, VmaOwner, int> {
+-    using Handle<VkBuffer, VmaOwner, int>::Handle;
++class VmaBuffer : public Handle<VkBuffer, VmaOwner, VmaBufferDispatch> {
++    using Handle<VkBuffer, VmaOwner, VmaBufferDispatch>::Handle;
+ 
+ public:
+     VmaAllocation Allocation() const noexcept { return owner.allocation; }
+@@ -72,8 +75,8 @@ public:
+     void UnMapMemory() { vmaUnmapMemory(owner.allocator, owner.allocation); }
+ };
+ 
+-class VmaImage : public Handle<VkImage, VmaOwner, int> {
+-    using Handle<VkImage, VmaOwner, int>::Handle;
++class VmaImage : public Handle<VkImage, VmaOwner, VmaImageDispatch> {
++    using Handle<VkImage, VmaOwner, VmaImageDispatch>::Handle;
+ 
+ public:
+     VmaAllocation Allocation() const noexcept { return owner.allocation; }
+@@ -85,7 +88,8 @@ public:
+     void UnMapMemory() { vmaUnmapMemory(owner.allocator, owner.allocation); }
+ };
+ 
+-constexpr inline int empty_int { 0 };
++constexpr inline VmaBufferDispatch vma_buffer_dispatch {};
++constexpr inline VmaImageDispatch  vma_image_dispatch {};
+ 
+ inline VkResult CreateVmaAllocator(const VmaAllocatorCreateInfo& ci,
+                                    VmaAllocatorHandle&           allocator_h) noexcept {
+@@ -104,7 +108,7 @@ inline VkResult CreateBuffer(const VmaAllocator& vma_allocator, const VkBufferCr
+ 
+     auto res = vmaCreateBuffer(
+         vma_allocator, &ci, &vma_info, &object, &owner.allocation, &owner.allocationInfo);
+-    if (res == VK_SUCCESS) buffer = VmaBuffer(object, owner, empty_int);
++    if (res == VK_SUCCESS) buffer = VmaBuffer(object, owner, vma_buffer_dispatch);
+     return res;
+ }
+ 
+@@ -116,7 +120,7 @@ inline VkResult CreateImage(const VmaAllocator& vma_allocator, const VkImageCrea
+ 
+     auto res = vmaCreateImage(
+         vma_allocator, &ci, &vma_info, &object, &owner.allocation, &owner.allocationInfo);
+-    if (res == VK_SUCCESS) vma_img = VmaImage(object, owner, empty_int);
++    if (res == VK_SUCCESS) vma_img = VmaImage(object, owner, vma_image_dispatch);
+     return res;
+ }
+ 
+diff --git a/src/Vulkan/include/vvk/vulkan_wrapper.hpp b/src/Vulkan/include/vvk/vulkan_wrapper.hpp
+index ec53ccd..18e2da5 100644
+--- a/src/Vulkan/include/vvk/vulkan_wrapper.hpp
++++ b/src/Vulkan/include/vvk/vulkan_wrapper.hpp
+@@ -268,8 +268,8 @@ private:
+ 
+     std::unique_ptr<AllocationType[]> allocations;
+     std::size_t                       num    = 0;
+-    VkDevice                          device = nullptr;
+-    PoolType                          pool   = nullptr;
++    VkDevice                          device {};
++    PoolType                          pool {};
+     const DeviceDispatch*             dld    = nullptr;
+ };
+ 
+diff --git a/src/VulkanRender/CMakeLists.txt b/src/VulkanRender/CMakeLists.txt
+index fd244c2..3662979 100644
+--- a/src/VulkanRender/CMakeLists.txt
++++ b/src/VulkanRender/CMakeLists.txt
+@@ -17,5 +17,8 @@ PRIVATE
+     wpRGraph
+ )
+ target_include_directories(${LIB_NAME} PUBLIC include PRIVATE include/VulkanRender)
+-target_compile_options(${LIB_NAME} PRIVATE ${warn_opts} -Wno-missing-field-initializers)
++target_compile_options(${LIB_NAME} PRIVATE ${warn_opts})
++if(NOT MSVC)
++  target_compile_options(${LIB_NAME} PRIVATE -Wno-missing-field-initializers)
++endif()
+ set_property(TARGET ${LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
+diff --git a/src/VulkanRender/CustomShaderPass.cpp b/src/VulkanRender/CustomShaderPass.cpp
+index 9b6acf1..1d9576a 100644
+--- a/src/VulkanRender/CustomShaderPass.cpp
++++ b/src/VulkanRender/CustomShaderPass.cpp
+@@ -211,7 +211,8 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
+                 auto& buf = m_desc.vertex_bufs[i];
+                 if (! m_desc.dyn_vertex) {
+                     if (! rr.vertex_buf->allocateSubRef(vertex.CapacitySizeOf(), buf)) return;
+-                    if (! rr.vertex_buf->writeToBuf(buf, { (uint8_t*)vertex.Data(), buf.size }))
++                    if (! rr.vertex_buf->writeToBuf(
++                            buf, { (uint8_t*)vertex.Data(), static_cast<size_t>(buf.size) }))
+                         return;
+                 } else {
+                     if (! rr.dyn_buf->allocateSubRef(vertex.CapacitySizeOf(), buf)) return;
+@@ -227,7 +228,9 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
+             auto& buf         = m_desc.index_buf;
+             if (! m_desc.dyn_vertex) {
+                 if (! rr.vertex_buf->allocateSubRef(indice.CapacitySizeof(), buf)) return;
+-                if (! rr.vertex_buf->writeToBuf(buf, { (uint8_t*)indice.Data(), buf.size })) return;
++                if (! rr.vertex_buf->writeToBuf(
++                        buf, { (uint8_t*)indice.Data(), static_cast<size_t>(buf.size) }))
++                    return;
+             } else {
+                 if (! rr.dyn_buf->allocateSubRef(indice.CapacitySizeof(), buf)) return;
+             }
+diff --git a/src/VulkanRender/FinPass.cpp b/src/VulkanRender/FinPass.cpp
+index 3c38c90..12791cf 100644
+--- a/src/VulkanRender/FinPass.cpp
++++ b/src/VulkanRender/FinPass.cpp
+@@ -137,7 +137,8 @@ void FinPass::prepare(Scene& scene, const Device& device, RenderingResources& rr
+         {
+             auto& buf = m_desc.vertex_buf;
+             rr.vertex_buf->allocateSubRef(sizeof(decltype(vertex_input)), buf);
+-            rr.vertex_buf->writeToBuf(buf, { (uint8_t*)vertex_input.data(), buf.size });
++            rr.vertex_buf->writeToBuf(
++                buf, { (uint8_t*)vertex_input.data(), static_cast<size_t>(buf.size) });
+         }
+     }
+     DescriptorSetInfo descriptor_info;
+diff --git a/src/VulkanRender/RenderDoc.h b/src/VulkanRender/RenderDoc.h
+index 9dce4e1..a8f9c21 100644
+--- a/src/VulkanRender/RenderDoc.h
++++ b/src/VulkanRender/RenderDoc.h
+@@ -1,32 +1,43 @@
+ #include <renderdoc_app.h>
+-#include <dlfcn.h>
+ #include <assert.h>
+ 
+-#ifdef _cplusplus
++#if defined(_WIN32)
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#else
++#include <dlfcn.h>
++#endif
++
++#ifdef __cplusplus
+ extern "C"
+ {
+ #endif 
+ 
+ RENDERDOC_API_1_1_2 *rdoc_api = NULL;
+ 
+-// At init, on windows
+-//if(HMODULE mod = GetModuleHandleA("renderdoc.dll"))
+-//{
+-//    pRENDERDOC_GetAPI RENDERDOC_GetAPI =
+-//        (pRENDERDOC_GetAPI)GetProcAddress(mod, "RENDERDOC_GetAPI");
+-//    int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_1_2, (void **)&rdoc_api);
+-//    assert(ret == 1);
+-//}
+-
+ void load_renderdoc_api() {
++#if defined(_WIN32)
++    // If RenderDoc is injected/loaded, query its API from the already-loaded module.
++    if (HMODULE mod = ::GetModuleHandleA("renderdoc.dll")) {
++        pRENDERDOC_GetAPI RENDERDOC_GetAPI =
++            (pRENDERDOC_GetAPI)::GetProcAddress(mod, "RENDERDOC_GetAPI");
++        if (RENDERDOC_GetAPI) {
++            int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_1_2, (void**)&rdoc_api);
++            assert(ret == 1);
++        }
++    }
++#else
+     // At init, on linux/android.
+     // For android replace librenderdoc.so with libVkLayer_GLES_RenderDoc.so
+-    if(void *mod = dlopen("librenderdoc.so", RTLD_NOW | RTLD_NOLOAD))
+-    {
+-        pRENDERDOC_GetAPI RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)dlsym(mod, "RENDERDOC_GetAPI");
+-        int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_1_2, (void **)&rdoc_api);
++    if (void* mod = dlopen("librenderdoc.so", RTLD_NOW | RTLD_NOLOAD)) {
++        pRENDERDOC_GetAPI RENDERDOC_GetAPI =
++            (pRENDERDOC_GetAPI)dlsym(mod, "RENDERDOC_GetAPI");
++        int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_1_2, (void**)&rdoc_api);
+         assert(ret == 1);
+     }
++#endif
+ }
+ 
+ // To start a frame capture, call StartFrameCapture.
+@@ -40,6 +51,6 @@ void load_renderdoc_api() {
+ // stop the capture
+ //if(rdoc_api) rdoc_api->EndFrameCapture(NULL, NULL);
+ 
+-#ifdef _cplusplus
++#ifdef __cplusplus
+ }
+ #endif 
+\ No newline at end of file
+diff --git a/src/VulkanRender/VulkanPass.hpp b/src/VulkanRender/VulkanPass.hpp
+index 6e5458b..22d3b2d 100644
+--- a/src/VulkanRender/VulkanPass.hpp
++++ b/src/VulkanRender/VulkanPass.hpp
+@@ -5,6 +5,7 @@
+ #include <string>
+ #include <string_view>
+ #include <algorithm>
++#include <iterator>
+ 
+ namespace wallpaper
+ {
+diff --git a/src/VulkanRender/VulkanRender.cpp b/src/VulkanRender/VulkanRender.cpp
+index 9fb7776..9157adb 100644
+--- a/src/VulkanRender/VulkanRender.cpp
++++ b/src/VulkanRender/VulkanRender.cpp
+@@ -147,6 +147,10 @@ bool VulkanRender::Impl::init(RenderInitInfo info) {
+         return false;
+     }
+     if (! info.offscreen) {
++        if (! info.surface_info.createSurfaceOp) {
++            LOG_ERROR("surface create callback is empty");
++            return false;
++        }
+         VkSurfaceKHR surface;
+         VVK_CHECK_ACT(
+             {
+diff --git a/src/WPParticleParser.cpp b/src/WPParticleParser.cpp
+index ab10e04..3ad1032 100644
+--- a/src/WPParticleParser.cpp
++++ b/src/WPParticleParser.cpp
+@@ -6,6 +6,7 @@
+ #include <memory>
+ #include <algorithm>
+ #include <cmath>
++#include <numbers>
+ 
+ #include <Eigen/Dense>
+ #include <Eigen/Geometry>
+@@ -144,7 +145,7 @@ ParticleInitOp WPParticleParser::genParticleInitOp(const nlohmann::json& wpj) {
+             };
+         } else if (name == "rotationrandom") {
+             VecRandom r;
+-            r.max[2] = 2 * M_PI;
++            r.max[2] = static_cast<float>(2.0 * std::numbers::pi);
+             VecRandom::ReadFromJson(wpj, r);
+             return [=](Particle& p, double) {
+                 auto result = GenRandomVec3(r.min, r.max);
+@@ -181,11 +182,13 @@ ParticleInitOp WPParticleParser::genParticleInitOp(const nlohmann::json& wpj) {
+                 // limit direction
+                 {
+                     double c     = result.dot(forward) / (result.norm() * forward.norm());
+-                    float  a     = std::acos(c) / M_PI;
++                    float  a     = static_cast<float>(std::acos(c) / std::numbers::pi);
+                     float  scale = r.scale / 2.0f;
+                     if (a > scale) {
+                         auto axis = result.cross(forward).normalized();
+-                        result    = AngleAxisf((a - a * scale) * M_PI, axis) * result;
++                        result = AngleAxisf(
++                                     static_cast<float>((a - a * scale) * std::numbers::pi), axis)
++                                 * result;
+                     }
+                 }
+                 // offset
+@@ -268,7 +271,7 @@ struct FrequencyValue {
+     float scalemin { 0.0f };
+     float scalemax { 1.0f };
+     float phasemin { 0.0f };
+-    float phasemax { static_cast<float>(2 * M_PI) };
++    float phasemax { static_cast<float>(2.0 * std::numbers::pi) };
+ 
+     struct StorageRandom {
+         bool  reset { true };
+@@ -306,20 +309,21 @@ struct FrequencyValue {
+         if (st.reset) {
+             st.frequency = Random::get(frequencymin, frequencymax);
+             st.scale     = Random::get(scalemin, scalemax);
+-            st.phase     = (float)Random::get((double)phasemin, phasemax + 2.0 * M_PI);
++            st.phase =
++                static_cast<float>(Random::get((double)phasemin, phasemax + 2.0 * std::numbers::pi));
+             st.reset     = false;
+         }
+     }
+     inline double GetScale(uint32_t index, double time) {
+         const auto& st = storage.at(index);
+-        double      f  = st.frequency / (2.0f * M_PI);
+-        double      w  = 2.0f * M_PI * f;
++        double      f  = st.frequency / (2.0 * std::numbers::pi);
++        double      w  = 2.0 * std::numbers::pi * f;
+         return algorism::lerp((std::cos(w * time + st.phase) + 1.0f) * 0.5f, scalemin, scalemax);
+     }
+     inline double GetMove(uint32_t index, double time, double timePass) {
+         const auto& st = storage.at(index);
+-        double      f  = st.frequency / (2.0f * M_PI);
+-        double      w  = 2.0f * M_PI * f;
++        double      f  = st.frequency / (2.0 * std::numbers::pi);
++        double      w  = 2.0 * std::numbers::pi * f;
+         return -1.0f * st.scale * w * std::sin(w * time + st.phase) * timePass;
+     }
+ };
+diff --git a/src/WPPuppet.cpp b/src/WPPuppet.cpp
+index 14724d4..fdeee9f 100644
+--- a/src/WPPuppet.cpp
++++ b/src/WPPuppet.cpp
+@@ -111,9 +111,8 @@ std::span<const Eigen::Affine3f> WPPuppet::genFrame(WPPuppetLayer& puppet_layer,
+     return m_final_affines;
+ }
+ 
+-static constexpr void genInterpolationInfo(WPPuppet::Animation::InterpolationInfo& info,
+-                                           double& cur, u32 length, double frame_time,
+-                                           double max_time) {
++static void genInterpolationInfo(WPPuppet::Animation::InterpolationInfo& info, double& cur,
++                                 u32 length, double frame_time, double max_time) {
+     cur          = std::fmod(cur, max_time);
+     double _rate = cur / frame_time;
+ 
+diff --git a/standalone_view/CMakeLists.txt b/standalone_view/CMakeLists.txt
+index 967fec0..30c0999 100644
+--- a/standalone_view/CMakeLists.txt
++++ b/standalone_view/CMakeLists.txt
+@@ -12,31 +12,74 @@ endif()
+ 
+ option(BUILD_QML "Build qml scene viewer" ${BUILD_QML})
+ 
+-find_package(PkgConfig REQUIRED)
++include(FetchContent)
++
++if(NOT WIN32)
++    find_package(PkgConfig REQUIRED)
++endif()
+ 
+ add_compile_options(
+-    $<$<CONFIG:Debug>:-ggdb>
+-    $<$<CONFIG:Debug>:-fno-omit-frame-pointer>
+-    $<$<CONFIG:Debug>:-fsanitize=address>
++    $<$<AND:$<CONFIG:Debug>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-ggdb>
++    $<$<AND:$<CONFIG:Debug>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-fno-omit-frame-pointer>
++    $<$<AND:$<CONFIG:Debug>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-fsanitize=address>
+ )
+ 
+ add_link_options(
+-    $<$<CONFIG:Debug>:-fsanitize=address>
++    $<$<AND:$<CONFIG:Debug>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-fsanitize=address>
+ )
+ 
+ include_directories(../third_party)
+ add_subdirectory(.. scenebackend)
+ 
+-pkg_check_modules(GLFW REQUIRED glfw3)
++set(GLFW_TARGET "")
++if(WIN32)
++    option(GLFW_USE_FETCHCONTENT "Download/build GLFW via FetchContent" OFF)
++    # Prefer a prebuilt GLFW (vcpkg / system install). Fallback to FetchContent.
++    find_package(glfw3 CONFIG QUIET)
++    if(TARGET glfw)
++        set(GLFW_TARGET glfw)
++    elseif(TARGET glfw3)
++        set(GLFW_TARGET glfw3)
++    elseif(GLFW_USE_FETCHCONTENT)
++        set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
++        set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
++        set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
++        set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
++        FetchContent_Declare(
++            glfw
++            GIT_REPOSITORY https://github.com/glfw/glfw.git
++            GIT_TAG        3.3.9
++        )
++        FetchContent_MakeAvailable(glfw)
++        set(GLFW_TARGET glfw)
++    else()
++        message(FATAL_ERROR
++            "GLFW not found. On Windows, install via vcpkg and reconfigure with the vcpkg toolchain, "
++            "or set GLFW_USE_FETCHCONTENT=ON if you have network access.\n"
++            "Example (vcpkg):\n"
++            "  vcpkg install glfw3:x64-windows\n"
++            "  cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake\n")
++    endif()
++else()
++    pkg_check_modules(GLFW REQUIRED glfw3)
++endif()
++
+ add_executable(${PROJECT_NAME}
+     glfwviewer.cpp
+ )
++find_package(Vulkan REQUIRED)
+ target_link_libraries(${PROJECT_NAME}
+     PUBLIC 
+-        ${GLFW_LIBRARIES}
++        $<$<BOOL:${GLFW_TARGET}>:${GLFW_TARGET}>
++        $<$<NOT:$<BOOL:${GLFW_TARGET}>>:${GLFW_LIBRARIES}>
++        Vulkan::Vulkan
+         wescene-renderer
+ )
+ 
++if(NOT WIN32)
++    target_include_directories(${PROJECT_NAME} PUBLIC ${GLFW_INCLUDE_DIRS})
++endif()
++
+ if(BUILD_QML)
+     find_package(Qt${QT_MAJOR_VERSION} COMPONENTS Qml REQUIRED)
+ 
+diff --git a/standalone_view/arg.hpp b/standalone_view/arg.hpp
+index 70d570c..2e5e448 100644
+--- a/standalone_view/arg.hpp
++++ b/standalone_view/arg.hpp
+@@ -1,6 +1,8 @@
+ #include <regex>
+ #include <tuple>
+ #include <utility>
++#include <cstdint>
++#include <charconv>
+ #include <argparse/argparse.hpp>
+ #include <string_view>
+ 
+@@ -13,8 +15,8 @@ constexpr std::string_view OPT_RESOLUTION  = "--resolution";
+ constexpr std::string_view OPT_CACHE_PATH  = "--cache-path";
+ 
+ struct Resolution {
+-	uint w;
+-	uint h;
++    std::uint32_t w;
++    std::uint32_t h;
+ };
+ std::ostream& operator<<(std::ostream& os, const Resolution& res) {
+     return os << res.w << 'x' << res.h;
+@@ -59,7 +61,7 @@ void setAndParseArg(argparse::ArgumentParser& arg, int argc, char** argv) {
+ 		.action([](const std::string& value) {
+ 			const std::regex re_res(R"(([0-9]+)x([0-9]+))");
+ 			std::smatch match;
+-			uint width = 1280, height = 720;
++			std::uint32_t width = 1280, height = 720;
+ 			if(std::regex_match(value, match, re_res)) {
+ 				const std::string w_str = match[1].str(), h_str = match[2].str();
+ 				std::from_chars(w_str.c_str(), w_str.c_str() + w_str.length(), width);
+diff --git a/standalone_view/glfwviewer.cpp b/standalone_view/glfwviewer.cpp
+index 9aaabcb..a52d8cb 100644
+--- a/standalone_view/glfwviewer.cpp
++++ b/standalone_view/glfwviewer.cpp
+@@ -46,9 +46,14 @@ void updateCallback() {
+ int main(int argc, char** argv) {
+     argparse::ArgumentParser program("scene-viewer");
+     setAndParseArg(program, argc, argv);
+-    auto [w_width, w_height] = program.get<Resolution>(OPT_RESOLUTION);
++    auto resolution = program.get<Resolution>(OPT_RESOLUTION);
++    auto w_width    = static_cast<int>(resolution.w);
++    auto w_height   = static_cast<int>(resolution.h);
+ 
+-    glfwInit();
++    if (glfwInit() != GLFW_TRUE) {
++        std::cout << "Failed to init GLFW" << std::endl;
++        return -1;
++    }
+     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+     GLFWwindow* window = glfwCreateWindow(w_width, w_height, "WP", nullptr, nullptr);
+ 
+@@ -65,7 +70,12 @@ int main(int argc, char** argv) {
+     {
+         uint32_t glfwExtCount = 0;
+         auto     exts         = glfwGetRequiredInstanceExtensions(&glfwExtCount);
+-        for (int i = 0; i < glfwExtCount; i++) {
++        if (exts == nullptr || glfwExtCount == 0) {
++            std::cout << "Failed to get required Vulkan extensions from GLFW" << std::endl;
++            glfwTerminate();
++            return -1;
++        }
++        for (uint32_t i = 0; i < glfwExtCount; i++) {
+             sf_info.instanceExts.emplace_back(exts[i]);
+         }
+ 
+@@ -91,7 +101,9 @@ int main(int argc, char** argv) {
+     psw->setPropertyInt32(wallpaper::PROPERTY_FPS, program.get<int32_t>(OPT_FPS));
+ 
+     std::string cache_path = program.get<std::string>(OPT_CACHE_PATH);
+-    if (cache_path.empty()) cache_path = wallpaper::platform::GetCachePath("wescene-renderer");
++    if (cache_path.empty()) {
++        cache_path = wallpaper::platform::GetCachePath("wescene-renderer").string();
++    }
+     psw->setPropertyString(wallpaper::PROPERTY_CACHE_PATH, cache_path);
+ 
+     glfwSetWindowUserPointer(window, &data);
+diff --git a/vcpkg-configuration.json b/vcpkg-configuration.json
+new file mode 100644
+index 0000000..3d9594b
+--- /dev/null
++++ b/vcpkg-configuration.json
+@@ -0,0 +1,14 @@
++{
++  "default-registry": {
++    "kind": "git",
++    "baseline": "62159a45e18f3a9ac0548628dcaf74fcb60c6ff9",
++    "repository": "https://github.com/microsoft/vcpkg"
++  },
++  "registries": [
++    {
++      "kind": "artifact",
++      "location": "https://github.com/microsoft/vcpkg-ce-catalog/archive/refs/heads/main.zip",
++      "name": "microsoft"
++    }
++  ]
++}
+diff --git a/vcpkg.json b/vcpkg.json
+new file mode 100644
+index 0000000..79386ba
+--- /dev/null
++++ b/vcpkg.json
+@@ -0,0 +1,6 @@
++{
++  "dependencies": [
++    "glfw3",
++    "lz4"
++  ]
++}
+-- 
+2.44.0.windows.1
+

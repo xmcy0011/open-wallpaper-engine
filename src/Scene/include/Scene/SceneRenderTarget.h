@@ -18,7 +18,7 @@ struct SceneRenderTarget {
     bool          allowReuse { false };
     bool          withDepth { false };
     bool          has_mipmap { false };
-    uint          mipmap_level { 1 };
+    u32           mipmap_level { 1 };
     TextureSample sample { TextureWrap::CLAMP_TO_EDGE,
                            TextureWrap::CLAMP_TO_EDGE,
                            TextureFilter::LINEAR,

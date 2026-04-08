@@ -3,6 +3,7 @@
 #include <cstring>
 #include <Eigen/Dense>
 #include <array>
+#include <numbers>
 
 #include "Core/Literals.hpp"
 #include "SpecTexs.hpp"
@@ -21,17 +22,17 @@ struct WPGOption {
 
 namespace
 {
-inline void AssignVertexTimes(std::span<float> dst, std::span<const float> src, uint num) noexcept {
-    const uint dst_one_size = dst.size() / num;
-    for (uint i = 0; i < num; i++) {
+inline void AssignVertexTimes(std::span<float> dst, std::span<const float> src, u32 num) noexcept {
+    const u32 dst_one_size = static_cast<u32>(dst.size() / num);
+    for (u32 i = 0; i < num; i++) {
         std::copy(src.begin(), src.end(), dst.begin() + i * dst_one_size);
     }
 }
 
-inline void AssignVertex(std::span<float> dst, std::span<const float> src, uint num) noexcept {
-    const uint dst_one_size = dst.size() / num;
-    const uint src_one_size = src.size() / num;
-    for (uint i = 0; i < num; i++) {
+inline void AssignVertex(std::span<float> dst, std::span<const float> src, u32 num) noexcept {
+    const u32 dst_one_size = static_cast<u32>(dst.size() / num);
+    const u32 src_one_size = static_cast<u32>(src.size() / num);
+    for (u32 i = 0; i < num; i++) {
         std::copy_n(src.begin() + i * src_one_size, src_one_size, dst.begin() + i * dst_one_size);
     }
 }
@@ -124,7 +125,7 @@ inline size_t GenRopeParticleData(std::span<const Particle>   particles,
 
     const auto one_size   = sv.OneSize();
     const auto totle_size = one_size * 4;
-    uint       i { 0 };
+    u32        i { 0 };
     for (const auto& p : particles) {
         if (i == 0) {
             i++;
@@ -141,7 +142,7 @@ inline size_t GenRopeParticleData(std::span<const Particle>   particles,
         float in_ParticleTrailLength   = particles.size();
         float in_ParticleTrailPosition = i - 1;
 
-        Vector3f cp_vec = AngleAxisf(p.rotation[2] + M_PI / 2.0f, Vector3f::UnitZ()) *
+        Vector3f cp_vec = AngleAxisf(p.rotation[2] + std::numbers::pi_v<float> / 2.0f, Vector3f::UnitZ()) *
                           Vector3f { 0.0f, size / 2.0f, 0.0f };
         Vector3f pos_vec = Vector3f { p.position } - Vector3f { pre_p.position };
 

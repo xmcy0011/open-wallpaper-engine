@@ -111,9 +111,8 @@ std::span<const Eigen::Affine3f> WPPuppet::genFrame(WPPuppetLayer& puppet_layer,
     return m_final_affines;
 }
 
-static constexpr void genInterpolationInfo(WPPuppet::Animation::InterpolationInfo& info,
-                                           double& cur, u32 length, double frame_time,
-                                           double max_time) {
+static void genInterpolationInfo(WPPuppet::Animation::InterpolationInfo& info, double& cur,
+                                 u32 length, double frame_time, double max_time) {
     cur          = std::fmod(cur, max_time);
     double _rate = cur / frame_time;
 

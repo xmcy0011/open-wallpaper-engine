@@ -29,10 +29,13 @@ struct VmaOwner {
 
 inline void Destroy(VmaAllocator allocator, int) { vmaDestroyAllocator(allocator); }
 
-inline void Destroy(VmaOwner owner, VkBuffer handle, int) {
+struct VmaBufferDispatch {};
+struct VmaImageDispatch {};
+
+inline void Destroy(VmaOwner owner, VkBuffer handle, const VmaBufferDispatch&) {
     vmaDestroyBuffer(owner.allocator, handle, owner.allocation);
 }
-inline void Destroy(VmaOwner owner, VkImage handle, int) {
+inline void Destroy(VmaOwner owner, VkImage handle, const VmaImageDispatch&) {
     vmaDestroyImage(owner.allocator, handle, owner.allocation);
 }
 
@@ -59,8 +62,8 @@ private:
     VmaAllocator m_allocator {};
 };
 
-class VmaBuffer : public Handle<VkBuffer, VmaOwner, int> {
-    using Handle<VkBuffer, VmaOwner, int>::Handle;
+class VmaBuffer : public Handle<VkBuffer, VmaOwner, VmaBufferDispatch> {
+    using Handle<VkBuffer, VmaOwner, VmaBufferDispatch>::Handle;
 
 public:
     VmaAllocation Allocation() const noexcept { return owner.allocation; }
@@ -72,8 +75,8 @@ public:
     void UnMapMemory() { vmaUnmapMemory(owner.allocator, owner.allocation); }
 };
 
-class VmaImage : public Handle<VkImage, VmaOwner, int> {
-    using Handle<VkImage, VmaOwner, int>::Handle;
+class VmaImage : public Handle<VkImage, VmaOwner, VmaImageDispatch> {
+    using Handle<VkImage, VmaOwner, VmaImageDispatch>::Handle;
 
 public:
     VmaAllocation Allocation() const noexcept { return owner.allocation; }
@@ -85,7 +88,8 @@ public:
     void UnMapMemory() { vmaUnmapMemory(owner.allocator, owner.allocation); }
 };
 
-constexpr inline int empty_int { 0 };
+constexpr inline VmaBufferDispatch vma_buffer_dispatch {};
+constexpr inline VmaImageDispatch  vma_image_dispatch {};
 
 inline VkResult CreateVmaAllocator(const VmaAllocatorCreateInfo& ci,
                                    VmaAllocatorHandle&           allocator_h) noexcept {
@@ -104,7 +108,7 @@ inline VkResult CreateBuffer(const VmaAllocator& vma_allocator, const VkBufferCr
 
     auto res = vmaCreateBuffer(
         vma_allocator, &ci, &vma_info, &object, &owner.allocation, &owner.allocationInfo);
-    if (res == VK_SUCCESS) buffer = VmaBuffer(object, owner, empty_int);
+    if (res == VK_SUCCESS) buffer = VmaBuffer(object, owner, vma_buffer_dispatch);
     return res;
 }
 
@@ -116,7 +120,7 @@ inline VkResult CreateImage(const VmaAllocator& vma_allocator, const VkImageCrea
 
     auto res = vmaCreateImage(
         vma_allocator, &ci, &vma_info, &object, &owner.allocation, &owner.allocationInfo);
-    if (res == VK_SUCCESS) vma_img = VmaImage(object, owner, empty_int);
+    if (res == VK_SUCCESS) vma_img = VmaImage(object, owner, vma_image_dispatch);
     return res;
 }
 

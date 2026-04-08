@@ -210,7 +210,7 @@ bool StagingBuffer::writeToBuf(const StagingBufferRef& ref, std::span<uint8_t> d
     if (m_stage_raw == nullptr) {
         mapStageBuf();
     }
-    VkDeviceSize size = std::min(ref.size - offset, data.size());
+    VkDeviceSize size = std::min<VkDeviceSize>(ref.size - offset, data.size());
     uint8_t*     raw  = (uint8_t*)m_stage_raw;
     std::copy(data.begin(), data.begin() + size, raw + ref.offset + offset);
     return true;
@@ -222,7 +222,7 @@ bool StagingBuffer::fillBuf(const StagingBufferRef& ref, size_t offset, size_t s
     if (m_stage_raw == nullptr) {
         mapStageBuf();
     }
-    VkDeviceSize size_     = std::min(ref.size - offset, size);
+    VkDeviceSize size_     = std::min<VkDeviceSize>(ref.size - offset, size);
     uint8_t*     raw       = (uint8_t*)m_stage_raw;
     uint8_t*     raw_begin = raw + ref.offset + offset;
     std::fill(raw_begin, raw_begin + size_, c);

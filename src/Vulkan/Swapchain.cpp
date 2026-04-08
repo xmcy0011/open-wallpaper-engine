@@ -132,7 +132,7 @@ bool Swapchain::Create(Device& device, VkSurfaceKHR surface, VkExtent2D extent, 
         .compositeAlpha   = compositeAlpha,
         .presentMode      = swap.m_present_mode,
         .clipped          = true,
-        .oldSwapchain     = nullptr,
+        .oldSwapchain     = VK_NULL_HANDLE,
     };
 
     VVK_CHECK_BOOL_RE(device.device().CreateSwapchainKHR(sci, swap.m_handle));

@@ -42,8 +42,13 @@ constexpr std::array base_device_exts {
     Extension { true, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME },
     Extension { true, VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME },
     Extension { true, VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME },
+#if defined(_WIN32)
+    Extension { true, "VK_KHR_external_memory_win32" },
+    Extension { true, "VK_KHR_external_semaphore_win32" }
+#else
     Extension { true, VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME },
     Extension { true, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME }
+#endif
 };
 
 struct VulkanRender::Impl {
@@ -155,6 +160,10 @@ bool VulkanRender::Impl::init(RenderInitInfo info) {
         return false;
     }
     if (! info.offscreen) {
+        if (! info.surface_info.createSurfaceOp) {
+            LOG_ERROR("surface create callback is empty");
+            return false;
+        }
         VkSurfaceKHR surface;
         VVK_CHECK_ACT(
             {

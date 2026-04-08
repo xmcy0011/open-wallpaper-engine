@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include "Core/NoCopyMove.hpp"
 
 namespace wallpaper
@@ -33,8 +34,8 @@ public:
         return { presented().load(), ready().load(), inprogress().load() };
     }
 
-    virtual uint width() const  = 0;
-    virtual uint height() const = 0;
+    virtual std::uint32_t width() const  = 0;
+    virtual std::uint32_t height() const = 0;
 
 protected:
     TripleSwapchain() = default;

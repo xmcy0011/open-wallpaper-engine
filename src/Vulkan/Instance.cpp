@@ -1,6 +1,7 @@
 #include "Instance.hpp"
 #include "Device.hpp"
 
+#include <array>
 #include <cstdio>
 #include "Utils/Logging.h"
 
@@ -15,10 +16,11 @@ constexpr std::array base_inst_exts { Extension { true, VK_EXT_DEBUG_UTILS_EXTEN
 namespace
 {
 
-VkBool32 DebugUtilsMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
-                                     VkDebugUtilsMessageTypeFlagsEXT             messageType,
-                                     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-                                     void*                                       pUserData) {
+VKAPI_ATTR VkBool32 VKAPI_CALL
+DebugUtilsMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
+                            VkDebugUtilsMessageTypeFlagsEXT             messageType,
+                            const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+                            void*                                       pUserData) {
     VkBool32 result = VK_FALSE;
     if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
         result |= VK_TRUE;
@@ -29,20 +31,20 @@ VkBool32 DebugUtilsMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT     
 }
 
 vvk::DebugUtilsMessenger SetupDebugCallback(vvk::Instance& instance) {
-    return instance.CreateDebugUtilsMessenger(VkDebugUtilsMessengerCreateInfoEXT {
-        .sType           = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-        .pNext           = nullptr,
-        .flags           = 0,
-        .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT,
-        .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                       VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                       VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-        .pfnUserCallback = DebugUtilsMessengerCallback,
-        .pUserData       = nullptr,
-    });
+    VkDebugUtilsMessengerCreateInfoEXT ci {};
+    ci.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    ci.pNext = nullptr;
+    ci.flags = 0;
+    ci.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
+                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
+    ci.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                     VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                     VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    ci.pfnUserCallback = DebugUtilsMessengerCallback;
+    ci.pUserData       = nullptr;
+    return instance.CreateDebugUtilsMessenger(ci);
 }
 
 VkResult CreatInstance(vvk::Instance* inst, std::span<const std::string_view> exts,
@@ -154,8 +156,16 @@ void Instance::Destroy() {}
 
 bool Instance::Create(Instance& inst, std::span<const Extension> instExts,
                       std::span<const InstanceLayer> instLayers) {
-    vvk::LoadLibrary(inst.m_vklib, inst.m_dld);
-    vvk::Load(inst.m_dld);
+    VkResult ret = vvk::LoadLibrary(inst.m_vklib, inst.m_dld);
+    if (ret != VK_SUCCESS) {
+        LOG_ERROR("load vulkan library failed: %d", ret);
+        return false;
+    }
+
+    if (! vvk::Load(inst.m_dld)) {
+        LOG_ERROR("load vulkan function failed");
+        return false;
+    }
 
     EnumateExts(inst.m_extensions, inst.m_dld);
     Set<std::string> exts, layers;

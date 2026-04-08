@@ -137,7 +137,8 @@ void FinPass::prepare(Scene& scene, const Device& device, RenderingResources& rr
         {
             auto& buf = m_desc.vertex_buf;
             rr.vertex_buf->allocateSubRef(sizeof(decltype(vertex_input)), buf);
-            rr.vertex_buf->writeToBuf(buf, { (uint8_t*)vertex_input.data(), buf.size });
+            rr.vertex_buf->writeToBuf(
+                buf, { (uint8_t*)vertex_input.data(), static_cast<size_t>(buf.size) });
         }
     }
     DescriptorSetInfo descriptor_info;
