@@ -18,7 +18,7 @@
 
 namespace waywallen::ipc {
 
-constexpr uint32_t kProtocolVersion = 1;
+constexpr uint32_t kProtocolVersion = 2;
 
 // ---------------------------------------------------------------------------
 // Daemon → renderer-host  (control plane)
@@ -73,11 +73,13 @@ struct BindBuffers {
     std::vector<uint64_t> sizes;             // per-buffer size
 };
 
-// Zero FDs on the hot path. image_index points into the BindBuffers array.
+// Zero FDs on the hot path unless has_sync_fd is true. image_index points
+// into the BindBuffers array.
 struct FrameReady {
     uint32_t image_index { 0 };
     uint64_t seq { 0 };
     uint64_t ts_ns { 0 };
+    bool     has_sync_fd { false };
 };
 
 struct ErrorEv {
@@ -187,7 +189,8 @@ inline nlohmann::json to_json(const EventMsg& m) {
                 return json { { "type", "FrameReady" },
                               { "image_index", v.image_index },
                               { "seq", v.seq },
-                              { "ts_ns", v.ts_ns } };
+                              { "ts_ns", v.ts_ns },
+                              { "has_sync_fd", v.has_sync_fd } };
             } else if constexpr (std::is_same_v<T, ErrorEv>) {
                 return json { { "type", "Error" }, { "msg", v.msg } };
             }
@@ -214,7 +217,8 @@ inline std::optional<EventMsg> event_from_json(const nlohmann::json& j) {
     if (tag == "FrameReady") {
         return FrameReady { j.value("image_index", 0u),
                             j.value("seq", uint64_t { 0 }),
-                            j.value("ts_ns", uint64_t { 0 }) };
+                            j.value("ts_ns", uint64_t { 0 }),
+                            j.value("has_sync_fd", false) };
     }
     if (tag == "Error") return ErrorEv { j.value("msg", std::string {}) };
     return std::nullopt;
