@@ -9,6 +9,8 @@
 #include "WPCommon.hpp"
 #include "WPMdlParser.hpp"
 #include "WPPkgFs.hpp"
+#include "wpscene/WPImageObject.h"
+#include "wpscene/WPMaterial.h"
 #include "wpscene/WPScene.h"
 
 #include "Fs/CBinaryStream.h"
@@ -119,6 +121,96 @@ void sort_by_path(json& arr) {
     });
 }
 
+// Convert an unordered_map<string, T> to a json object. nlohmann::json's
+// default object storage sorts keys alphabetically, so the result is
+// deterministic across runs.
+template <typename Map>
+json map_to_json(const Map& m) {
+    json o = json::object();
+    for (const auto& [k, v] : m) o[k] = v;
+    return o;
+}
+
+json dump_material(const wallpaper::wpscene::WPMaterial& m) {
+    return {
+        { "shader", m.shader },
+        { "blending", m.blending },
+        { "cullmode", m.cullmode },
+        { "depthtest", m.depthtest },
+        { "depthwrite", m.depthwrite },
+        { "use_puppet", m.use_puppet },
+        { "textures", m.textures },
+        { "combos", map_to_json(m.combos) },
+        { "constantshadervalues", map_to_json(m.constantshadervalues) },
+    };
+}
+
+// Pull the universal transform-ish fields straight off the raw object
+// json so unknown subtypes (light/particle/sound) still produce a row.
+// Field types in scene.json are inconsistent (origin can be either an
+// array of floats or a "x y z" string), so we copy the raw value through
+// instead of forcing a particular C++ type.
+json dump_object_common(const json& obj) {
+    json o;
+    o["id"]      = obj.value("id", -1);
+    o["name"]    = obj.value("name", std::string {});
+    o["visible"] = obj.value("visible", true);
+    for (const char* key :
+         { "origin", "scale", "angles", "size", "parallaxDepth", "alignment" }) {
+        if (obj.contains(key)) o[key] = obj[key];
+    }
+    return o;
+}
+
+// Run WPImageObject::FromJson against a single object json and dump the
+// parsed fields. Returns nullopt if the object is not an image object
+// (no "image" field) so the caller can fall back to common-only dumps.
+json dump_image_object(const json& obj, wallpaper::fs::VFS& vfs) {
+    json out                          = dump_object_common(obj);
+    out["kind"]                       = "image";
+    wallpaper::wpscene::WPImageObject img;
+    bool                              ok = false;
+    try {
+        ok = img.FromJson(obj, vfs);
+    } catch (const std::exception&) {
+        ok = false;
+    }
+    out["parsed"]         = ok;
+    if (! ok) return out;
+    out["image"]          = img.image;
+    out["color"]          = img.color;
+    out["colorBlendMode"] = img.colorBlendMode;
+    out["alpha"]          = img.alpha;
+    out["brightness"]     = img.brightness;
+    out["fullscreen"]     = img.fullscreen;
+    out["nopadding"]      = img.nopadding;
+    out["origin_parsed"]  = img.origin;
+    out["scale_parsed"]   = img.scale;
+    out["angles_parsed"]  = img.angles;
+    out["size_parsed"]    = img.size;
+    out["visible_parsed"] = img.visible;
+    out["alignment_parsed"] = img.alignment;
+    out["puppet"]         = img.puppet;
+    out["material"]       = dump_material(img.material);
+    out["effect_count"]   = static_cast<int>(img.effects.size());
+    json effs             = json::array();
+    for (const auto& e : img.effects) {
+        json je;
+        je["id"]            = e.id;
+        je["name"]          = e.name;
+        je["visible"]       = e.visible;
+        je["material_count"] = static_cast<int>(e.materials.size());
+        je["pass_count"]    = static_cast<int>(e.passes.size());
+        je["fbo_count"]     = static_cast<int>(e.fbos.size());
+        json mats           = json::array();
+        for (const auto& mm : e.materials) mats.push_back(dump_material(mm));
+        je["materials"] = std::move(mats);
+        effs.push_back(std::move(je));
+    }
+    out["effects"] = std::move(effs);
+    return out;
+}
+
 } // namespace
 
 json DumpWorkshop(const std::string& workshop_dir, std::string& err) {
@@ -201,6 +293,27 @@ json DumpWorkshop(const std::string& workshop_dir, std::string& err) {
                     { "nearz", scene.general.nearz },
                     { "farz", scene.general.farz },
                 };
+                // ---- objects ----
+                json jobjects = json::array();
+                if (j.contains("objects") && j["objects"].is_array()) {
+                    for (const auto& obj : j["objects"]) {
+                        if (obj.contains("image")) {
+                            jobjects.push_back(dump_image_object(obj, vfs));
+                        } else {
+                            json o     = dump_object_common(obj);
+                            o["kind"]  = obj.contains("light")    ? "light"
+                                         : obj.contains("particle") ? "particle"
+                                         : obj.contains("sound")    ? "sound"
+                                                                    : "unknown";
+                            jobjects.push_back(std::move(o));
+                        }
+                    }
+                }
+                std::sort(jobjects.begin(), jobjects.end(), [](const json& a, const json& b) {
+                    return a.value("id", -1) < b.value("id", -1);
+                });
+                jscene["object_count"] = static_cast<int>(jobjects.size());
+                jscene["objects"]      = std::move(jobjects);
             } catch (const std::exception& e) {
                 out["scene"] = { { "parsed", false }, { "error", e.what() } };
             }
