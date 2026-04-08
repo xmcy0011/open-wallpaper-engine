@@ -361,13 +361,50 @@ json DumpWorkshop(const std::string& workshop_dir, std::string& err) {
             ok = false;
         }
         json jm;
-        jm["path"] = e.path;
-        jm["ok"]   = ok;
-        jm["mdlv"] = mdl.mdlv;
-        jm["mdls"] = mdl.mdls;
-        jm["mdla"] = mdl.mdla;
-        jm["bones"] = ok && mdl.puppet ? static_cast<int>(mdl.puppet->bones.size()) : 0;
-        jm["anims"] = ok && mdl.puppet ? static_cast<int>(mdl.puppet->anims.size()) : 0;
+        jm["path"]          = e.path;
+        jm["ok"]            = ok;
+        jm["mdlv"]          = mdl.mdlv;
+        jm["mdls"]          = mdl.mdls;
+        jm["mdla"]          = mdl.mdla;
+        jm["mat_json_file"] = mdl.mat_json_file;
+        jm["vertex_count"]  = static_cast<int>(mdl.vertexs.size());
+        jm["index_count"]   = static_cast<int>(mdl.indices.size());
+        jm["bones"]         = ok && mdl.puppet ? static_cast<int>(mdl.puppet->bones.size()) : 0;
+        jm["anims"]         = ok && mdl.puppet ? static_cast<int>(mdl.puppet->anims.size()) : 0;
+        if (ok && mdl.puppet) {
+            // Bone tree: parent index per bone + a translation hash (sum of
+            // the four matrix columns) so a parser regression that flips
+            // sign / column order or drops a bone is caught immediately.
+            json bones = json::array();
+            for (const auto& b : mdl.puppet->bones) {
+                json jb;
+                jb["parent"] = static_cast<int64_t>(b.parent);
+                std::array<double, 4> col_sums { 0, 0, 0, 0 };
+                for (int c = 0; c < 4; ++c)
+                    for (int r = 0; r < 4; ++r)
+                        col_sums[static_cast<std::size_t>(c)] += b.transform.matrix()(r, c);
+                jb["transform_col_sums"] = col_sums;
+                bones.push_back(std::move(jb));
+            }
+            jm["bone_tree"] = std::move(bones);
+
+            json anims = json::array();
+            for (const auto& a : mdl.puppet->anims) {
+                json ja;
+                ja["id"]       = a.id;
+                ja["fps"]      = a.fps;
+                ja["length"]   = a.length;
+                ja["name"]     = a.name;
+                ja["mode"]     = static_cast<int>(a.mode);
+                ja["bone_track_count"] = static_cast<int>(a.bframes_array.size());
+                int total_frames = 0;
+                for (const auto& bf : a.bframes_array)
+                    total_frames += static_cast<int>(bf.frames.size());
+                ja["total_bone_frames"] = total_frames;
+                anims.push_back(std::move(ja));
+            }
+            jm["anim_tracks"] = std::move(anims);
+        }
         jmdl.push_back(std::move(jm));
     }
     sort_by_path(jmdl);
