@@ -49,6 +49,14 @@ struct Options {
     std::string initial_scene;
     std::string initial_assets;
     uint32_t    initial_fps { 30 };
+    // Test-pattern mode bypasses scene loading. After initVulkan creates
+    // the ExSwapchain with its 3 DMA-BUF slots, the host snapshots and
+    // sends BindBuffers directly, then pumps the ring on a timer and
+    // emits FrameReady events. No pixels are drawn; slot contents stay
+    // at whatever the driver initialized them to. This unblocks the
+    // Rust-side daemon/viewer bring-up before a real Wallpaper Engine
+    // assets directory is wired up (I4 milestone).
+    bool test_pattern { false };
 };
 
 void die(const std::string& msg) {
@@ -76,10 +84,13 @@ Options parse_args(int argc, char** argv) {
             o.initial_assets = next();
         } else if (a == "--fps") {
             o.initial_fps = static_cast<uint32_t>(std::stoul(next()));
+        } else if (a == "--test-pattern") {
+            o.test_pattern = true;
         } else if (a == "--help" || a == "-h") {
             std::printf(
                 "usage: waywallen-renderer --ipc PATH [--width W] [--height H]\n"
                 "                          [--scene PKG] [--assets DIR] [--fps N]\n"
+                "                          [--test-pattern]\n"
                 "\n"
                 "This binary is the renderer host subprocess spawned by the\n"
                 "waywallen daemon. It renders a Wallpaper Engine scene into\n"
@@ -305,12 +316,83 @@ int main(int argc, char** argv) {
     // Reader thread handles daemon→host traffic.
     std::thread reader([&]() { ipc_reader_loop(state); });
 
+    // --test-pattern mode: bypass SceneWallpaper's looper and drive the
+    // ExSwapchain ring directly from a host-owned timer thread. This
+    // emits BindBuffers (once) + FrameReady (per tick) without needing
+    // a Wallpaper Engine assets directory. Pixel contents are whatever
+    // the driver left in the allocation — not meaningful, but the Rust
+    // daemon/viewer wire end-to-end can be exercised.
+    std::thread test_pattern_thread;
+    if (opts.test_pattern) {
+        // initVulkan is async — it posts INIT_VULKAN onto the render
+        // looper and returns. Poll for the ExSwapchain to come up,
+        // bounded to 5 seconds.
+        wallpaper::ExSwapchain* ex = nullptr;
+        const auto              deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (std::chrono::steady_clock::now() < deadline) {
+            ex = wp.exSwapchain();
+            if (ex != nullptr) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        if (ex == nullptr)
+            die("--test-pattern: exSwapchain() still null after 5s");
+        // Send BindBuffers immediately — slots are populated at
+        // VulkanExSwapchain construction time, no scene needed.
+        {
+            std::lock_guard<std::mutex> lock(state.send_mu);
+            send_bind_buffers_locked(state, ex);
+        }
+        if (!state.bound.load(std::memory_order_acquire))
+            die("--test-pattern: send_bind_buffers_locked failed to bind");
+
+        const uint32_t fps = opts.initial_fps ? opts.initial_fps : 30;
+        const auto     tick_period =
+            std::chrono::nanoseconds(1'000'000'000ULL / fps);
+        test_pattern_thread = std::thread([&, tick_period]() {
+            auto next = std::chrono::steady_clock::now();
+            while (!state.shutdown.load(std::memory_order_acquire)) {
+                next += tick_period;
+                // Advance the producer side of the ring, then eat one
+                // frame from the consumer side to get back a stable
+                // image_index for the FrameReady event.
+                ex->renderFrame();
+                wallpaper::ExHandle* frame = ex->eatFrame();
+                if (frame != nullptr) {
+                    std::lock_guard<std::mutex> lock(state.send_mu);
+                    try {
+                        waywallen::ipc::FrameReady fr {};
+                        fr.image_index =
+                            static_cast<uint32_t>(frame->id());
+                        fr.seq =
+                            state.seq.fetch_add(1, std::memory_order_relaxed);
+                        fr.ts_ns = now_ns();
+                        waywallen::ipc::EventMsg ev {
+                            std::in_place_type<waywallen::ipc::FrameReady>, fr
+                        };
+                        waywallen::ipc::send_typed(state.sock, ev);
+                    } catch (const std::exception& e) {
+                        std::fprintf(stderr,
+                                     "waywallen-renderer: test-pattern send "
+                                     "failed: %s\n",
+                                     e.what());
+                        state.shutdown.store(true, std::memory_order_release);
+                        return;
+                    }
+                }
+                std::this_thread::sleep_until(next);
+            }
+        });
+    }
+
     // Main thread idles. All the real work happens in the SceneWallpaper's
-    // internal looper threads, which fire redraw_callback when frames are
-    // ready. We just wait for a shutdown signal.
+    // internal looper threads (or the test-pattern thread), which fire
+    // events when frames are ready. We just wait for a shutdown signal.
     while (!state.shutdown.load(std::memory_order_acquire)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
+
+    if (test_pattern_thread.joinable()) test_pattern_thread.join();
 
     if (reader.joinable()) {
         ::shutdown(state.sock, SHUT_RD); // wakes blocking recvmsg
